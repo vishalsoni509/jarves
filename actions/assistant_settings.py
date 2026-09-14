@@ -17,9 +17,10 @@ def assistant_settings(parameters: dict, jarvis=None, speak=None, player=None) -
         target_gender = voice_gender or ("female" if "female" in action else "male")
         saved_g = save_voice_gender(target_gender)
         
-        # Trigger immediate reconnect on live session to apply new voice configuration mid-session
+        # Voice changes in Gemini Live API require starting a fresh session without the resumption handle;
+        # otherwise the server restores the voice from the resumed session state.
         if jarvis is not None and hasattr(jarvis, "request_reconnect"):
-            jarvis.request_reconnect(keep_context=True, reason=f"{saved_g} voice switch")
+            jarvis.request_reconnect(keep_context=False, reason=f"{saved_g} voice switch")
             
         return f"Voice switched to {saved_g} voice."
 
