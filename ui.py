@@ -434,7 +434,7 @@ class HudCanvas(QWidget):
 
         # Precompute 3D sphere lattice nodes (latitude / longitude grid)
         self._sphere_nodes: list[tuple[float, float, float, int, int]] = []
-        lats, lons = 10, 18
+        lats, lons = 12, 22
         for i in range(lats):
             lat = -math.pi / 2 + (i + 0.5) * (math.pi / lats)
             for j in range(lons):
@@ -925,7 +925,7 @@ class HudCanvas(QWidget):
             projected_nodes.append((px, py, z3, lat_idx, lon_idx))
 
         # Draw wireframe circuit connector lines between adjacent grid points
-        lats_count, lons_count = 10, 18
+        lats_count, lons_count = 12, 22
         p.setBrush(Qt.BrushStyle.NoBrush)
         for idx, (px, py, z, i, j) in enumerate(projected_nodes):
             # Connect to longitude neighbor
@@ -1029,14 +1029,15 @@ class HudCanvas(QWidget):
         else:
             # Holographic Core Hexagon/Reticle Badge
             badge_r = 38 + amp * 8
-            badge_col = QColor(c_bright); badge_col.setAlpha(min(240, int(self._halo * 1.5)))
-            p.setPen(QPen(badge_col, 1.2, Qt.PenStyle.SolidLine))
-            p.setBrush(QBrush(QColor(10, 5, 0, 110)))
+            badge_col = QColor(c_bright); badge_col.setAlpha(min(255, int(self._halo * 1.6)))
+            inner_bg = QColor(8, 4, 1, 150)
+            p.setBrush(QBrush(inner_bg))
+            p.setPen(QPen(badge_col, 1.5, Qt.PenStyle.SolidLine))
 
-            # Hexagonal badge
+            # Outer Hexagonal badge
             hex_path = QPainterPath()
             for k in range(6):
-                ang_k = math.radians(k * 60 + self._tick * 0.4)
+                ang_k = math.radians(k * 60 + self._tick * 0.3)
                 hx = cx + badge_r * math.cos(ang_k)
                 hy = cy + badge_r * math.sin(ang_k)
                 if k == 0:
@@ -1046,8 +1047,28 @@ class HudCanvas(QWidget):
             hex_path.closeSubpath()
             p.drawPath(hex_path)
 
+            # Inner concentric hexagonal rim
+            inner_hex = QPainterPath()
+            for k in range(6):
+                ang_k = math.radians(k * 60 - self._tick * 0.3)
+                hx = cx + (badge_r - 6) * math.cos(ang_k)
+                hy = cy + (badge_r - 6) * math.sin(ang_k)
+                if k == 0:
+                    inner_hex.moveTo(hx, hy)
+                else:
+                    inner_hex.lineTo(hx, hy)
+            inner_hex.closeSubpath()
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(c_warm.red(), c_warm.green(), c_warm.blue(), 160), 1.0, Qt.PenStyle.DashLine))
+            p.drawPath(inner_hex)
+
+            # Center target pin
+            p.setBrush(QBrush(c_hot))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QPointF(cx, cy), 2.2, 2.2)
+
             # Assistant Name in Golden Holographic Typography
-            txt_alpha = min(255, int(self._halo * 2.2))
+            txt_alpha = min(255, int(self._halo * 2.4))
             p.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
             p.setPen(QPen(QColor(c_hot.red(), c_hot.green(), c_hot.blue(), txt_alpha), 1))
             p.drawText(QRectF(cx - 90, cy - 12, 180, 24), Qt.AlignmentFlag.AlignCenter, self._assistant_name)
@@ -1133,10 +1154,19 @@ class HudCanvas(QWidget):
         p.end()
 
 class IconManager:
-    """Extracts, crops and caches icons from config/mj (40 holographic icons)."""
+    """Extracts, crops and caches icons from config/mj or config/mj.png (40 holographic icons)."""
     _cache: dict[tuple[str, int], QPixmap] = {}
     _raw_crops: dict[str, object] = {}
     _loaded = False
+
+    _ALIASES = {
+        "mem": "memory", "ram": "memory", "net": "network", "temp": "temperature",
+        "tmp": "temperature", "mic": "mic_active", "microphone": "mic_active",
+        "stop": "interrupt", "abort": "interrupt", "upload": "file_upload",
+        "drop": "file_upload", "cfg": "settings", "gear": "settings",
+        "bot": "ai_core", "shield": "security", "sec": "security",
+        "speak": "voice", "audio": "voice"
+    }
 
     @classmethod
     def _ensure_loaded(cls):
@@ -1144,6 +1174,8 @@ class IconManager:
             return
         cls._loaded = True
         icon_path = CONFIG_DIR / "mj"
+        if not icon_path.exists():
+            icon_path = CONFIG_DIR / "mj.png"
         if not icon_path.exists():
             return
         try:
@@ -1173,10 +1205,12 @@ class IconManager:
     @classmethod
     def get_pixmap(cls, name: str, size: int = 32) -> QPixmap | None:
         cls._ensure_loaded()
-        key = (name, size)
+        name_clean = (name or "").lower().strip()
+        name_clean = cls._ALIASES.get(name_clean, name_clean)
+        key = (name_clean, size)
         if key in cls._cache:
             return cls._cache[key]
-        raw = cls._raw_crops.get(name)
+        raw = cls._raw_crops.get(name_clean)
         if raw is None:
             return None
         try:
