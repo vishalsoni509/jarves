@@ -33,12 +33,9 @@ from PyQt6.QtWidgets import (
     QStackedWidget, QTextEdit, QVBoxLayout, QWidget, QProgressBar,
 )
 
-# ── Which Mark this is ───────────────────────────────────────────────────────
+# ── App version ──────────────────────────────────────────────────────────────
 # One constant, read by the window title, the header badge and the PROTOCOL
-# panel. It used to be typed separately in each of those places, and they drifted:
-# Mark 52 and 53 shipped showing "PROTOCOL XLIX" — the number from Mark 49 — and
-# Mark 55 shipped titled "MARK 54". Deriving the protocol from the name means a
-# release bump is this one line.
+# panel. Deriving the protocol from the name means a release bump is this one line.
 APP_VERSION  = "System-Assist"
 APP_PROTOCOL = APP_VERSION.split()[-1]
 

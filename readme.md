@@ -84,7 +84,7 @@ The live session moved to **`gemini-3.1-flash-live-preview`**, cutting the time-
 ### 🧩 Self-Describing Skills — a Scalable Core
 Every bundled **action** now carries its own `TOOL` declaration in its own file (exactly like a drop-in **plugin's** `PLUGIN` dict), and the core auto-discovers them at launch. `main.py` no longer holds a giant list of tool definitions and dispatch branches — it shrank by hundreds of lines. Adding a new built-in skill, or promoting an `actions/*.py` file into a shareable plugin, is now just… moving a file.
 
-> Built on the Mark LI/LII foundation: the **🧩 Plugin System**, **♾️ Unlimited Sessions**, **🎨 Live Theming**, **〰️ Reactive HUD** and **🎙️ Voice Picker** are all still here.
+> Built on the previous version foundation: the **🧩 Plugin System**, **♾️ Unlimited Sessions**, **🎨 Live Theming**, **〰️ Reactive HUD** and **🎙️ Voice Picker** are all still here.
 
 ---
 
@@ -185,17 +185,17 @@ It is held in memory only, deliberately: writing it to disk would make a fresh l
 
 ---
 
-## 🗺️ Mark Roadmap
+## 🗺️ Version Roadmap
 
-| Mark | Focus |
+| Version | Focus |
 |---|---|
-| **XLIX** | Auto-start · clipboard intelligence · assistant customization |
-| **L** | Session memory · background monitoring · proactive 2.0 · instant vision |
-| **LI** | Plugin system · affective dialog · proactive audio · unlimited sessions |
-| **LII** | Voice picker · live theming · reactive HUD · recallable memory · undo · real confirmation · audio device picker · session continuity |
-| **LIII** | Wake word · Gemini 3.1 Flash Live · instant acknowledgment · self-describing action/plugin architecture |
-| *shared* | The last five above also shipped to LIII, LIV and LV at the same time — moving up a Mark never loses them |
-| **LIV+** | Plugin files: email · quiz mode · calendar · home assistant · 3D-printer · and more |
+| **v1.0** | Auto-start · clipboard intelligence · assistant customization |
+| **v2.0** | Session memory · background monitoring · proactive 2.0 · instant vision |
+| **v3.0** | Plugin system · affective dialog · proactive audio · unlimited sessions |
+| **v4.0** | Voice picker · live theming · reactive HUD · recallable memory · undo · real confirmation · audio device picker · session continuity |
+| **v5.0** | Wake word · Gemini 3.1 Flash Live · instant acknowledgment · self-describing action/plugin architecture |
+| *shared* | The features above carry forward with every update — upgrading never loses them |
+| **v6.0+** | Plugin files: email · quiz mode · calendar · home assistant · 3D-printer · and more |
 
 ---
 
