@@ -434,7 +434,7 @@ class HudCanvas(QWidget):
 
         # Precompute 3D sphere lattice nodes (latitude / longitude grid)
         self._sphere_nodes: list[tuple[float, float, float, int, int]] = []
-        lats, lons = 12, 22
+        lats, lons = 14, 24
         for i in range(lats):
             lat = -math.pi / 2 + (i + 0.5) * (math.pi / lats)
             for j in range(lons):
@@ -443,6 +443,36 @@ class HudCanvas(QWidget):
                 y = math.sin(lat)
                 z = math.cos(lat) * math.sin(lon)
                 self._sphere_nodes.append((x, y, z, i, j))
+
+        # Earth continent landmass polygon outlines for 3D Globe Projection
+        continents = [
+            # North America
+            [(70, -165), (71, -130), (70, -80), (60, -60), (45, -55), (42, -70), (30, -80), (25, -80), (18, -100), (30, -115), (48, -125), (60, -145)],
+            # South America
+            [(12, -75), (8, -50), (-5, -35), (-22, -40), (-40, -62), (-54, -68), (-45, -75), (-20, -70), (0, -80)],
+            # Europe
+            [(70, 25), (60, 30), (55, 38), (45, 30), (38, 24), (36, -6), (44, -8), (52, 5), (60, 5)],
+            # Africa
+            [(37, 10), (32, 32), (12, 50), (-5, 40), (-34, 25), (-34, 18), (5, 0), (15, -17), (35, -5)],
+            # Asia
+            [(75, 100), (70, 175), (60, 160), (40, 130), (22, 120), (10, 105), (20, 80), (35, 60), (60, 60)],
+            # Australia
+            [(-12, 130), (-15, 150), (-35, 150), (-38, 140), (-32, 115), (-20, 115)]
+        ]
+        self._land_nodes: list[tuple[float, float, float]] = []
+        for poly in continents:
+            for i in range(len(poly)):
+                lat1, lon1 = poly[i]
+                lat2, lon2 = poly[(i + 1) % len(poly)]
+                steps = 6
+                for s in range(steps):
+                    t = s / float(steps)
+                    lat = math.radians(lat1 + (lat2 - lat1) * t)
+                    lon = math.radians(lon1 + (lon2 - lon1) * t)
+                    x = math.cos(lat) * math.cos(lon)
+                    y = math.sin(lat)
+                    z = math.cos(lat) * math.sin(lon)
+                    self._land_nodes.append((x, y, z))
 
         # Inner core shell nodes
         self._inner_nodes: list[tuple[float, float, float]] = []
@@ -716,105 +746,126 @@ class HudCanvas(QWidget):
 
         # ── 1B. FLOATING HOLOGRAPHIC DATA SCREENS (SIDE WINGS) ────────────────
         if fw > 360:
-            # Left Floating Screen: Orbital Telemetry & Coordinates
-            scr_w, scr_h = 100, 120
-            scr_lx = cx - fw * 0.45
-            scr_ly = cy - scr_h / 2
+            # 1. Top-Left Floating Screen: Flat 2D World Map Projection
+            scr_w, scr_h = 110, 75
+            scr_lx = cx - fw * 0.46
+            scr_ly = cy - fw * 0.36
 
-            p.setBrush(QBrush(QColor(2, 10, 18, 140)))
-            p.setPen(QPen(QColor(c_cyan.red(), c_cyan.green(), c_cyan.blue(), 90), 1))
+            p.setBrush(QBrush(QColor(2, 10, 18, 160)))
+            p.setPen(QPen(QColor(c_cyan.red(), c_cyan.green(), c_cyan.blue(), 100), 1))
             p.drawRoundedRect(QRectF(scr_lx, scr_ly, scr_w, scr_h), 4, 4)
 
-            # Left screen header
-            p.setFont(QFont("Courier New", 6, QFont.Weight.Bold))
+            p.setFont(QFont("Courier New", 5, QFont.Weight.Bold))
             p.setPen(QPen(c_cyan, 1))
-            p.drawText(QRectF(scr_lx + 6, scr_ly + 4, scr_w - 12, 12), Qt.AlignmentFlag.AlignLeft, "◈ ORBIT // TRACK")
+            p.drawText(QRectF(scr_lx + 4, scr_ly + 3, scr_w - 8, 10), Qt.AlignmentFlag.AlignLeft, "◈ WORLD MAP // GLOBAL")
 
-            # Mini rotating globe/orbit inside left screen
-            p.save()
-            p.translate(scr_lx + scr_w / 2, scr_ly + 40)
+            # Mini flat 2D continent map dots
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(c_bright))
+            map_pts = [
+                (-35, -15), (-30, -10), (-25, -5), (-30, 5), (-32, 15), (-25, 20),
+                (-5, -12), (0, -5), (5, 5), (0, 18), (5, 22),
+                (15, -18), (25, -15), (35, -10), (40, 5), (30, 12), (20, 18),
+                (35, 22), (40, 25)
+            ]
+            for m_dx, m_dy in map_pts:
+                p.drawEllipse(QPointF(scr_lx + scr_w / 2 + m_dx * 1.1, scr_ly + 40 + m_dy * 0.9), 1.8, 1.8)
+
+            # 2. Mid-Left Floating Screen: Tactical Target Radar Scope
+            scr2_ly = cy - 10
+            scr2_h = 95
+            p.setBrush(QBrush(QColor(2, 10, 18, 160)))
+            p.setPen(QPen(QColor(c_main.red(), c_main.green(), c_main.blue(), 100), 1))
+            p.drawRoundedRect(QRectF(scr_lx, scr2_ly, scr_w, scr2_h), 4, 4)
+
+            p.setFont(QFont("Courier New", 5, QFont.Weight.Bold))
+            p.setPen(QPen(c_bright, 1))
+            p.drawText(QRectF(scr_lx + 4, scr2_ly + 3, scr_w - 8, 10), Qt.AlignmentFlag.AlignLeft, "◈ RADAR // GYRO SCOPE")
+
+            # Radar rings with sweeping beam
+            r_cx = scr_lx + scr_w / 2
+            r_cy = scr2_ly + 40
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(QPen(QColor(c_cyan.red(), c_cyan.green(), c_cyan.blue(), 120), 1))
+            p.setPen(QPen(QColor(c_main.red(), c_main.green(), c_main.blue(), 120), 1))
+            p.drawEllipse(QRectF(r_cx - 20, r_cy - 20, 40, 40))
+            p.drawEllipse(QRectF(r_cx - 10, r_cy - 10, 20, 20))
+            p.drawLine(QPointF(r_cx - 20, r_cy), QPointF(r_cx + 20, r_cy))
+            p.drawLine(QPointF(r_cx, r_cy - 20), QPointF(r_cx, r_cy + 20))
+
+            sw_rad = math.radians(self._scan)
+            p.setPen(QPen(c_hot, 1.5))
+            p.drawLine(QPointF(r_cx, r_cy), QPointF(r_cx + 20 * math.cos(sw_rad), r_cy + 20 * math.sin(sw_rad)))
+
+            p.setFont(QFont("Courier New", 5))
+            p.setPen(QPen(QColor(c_bright.red(), c_bright.green(), c_bright.blue(), 160), 1))
+            p.drawText(QRectF(scr_lx + 4, scr2_ly + 68, scr_w - 8, 8), Qt.AlignmentFlag.AlignLeft, "TGT LOCK // 01")
+            p.drawText(QRectF(scr_lx + 4, scr2_ly + 78, scr_w - 8, 8), Qt.AlignmentFlag.AlignLeft, "BRG 042° TRUE")
+
+            # 3. Top-Right Floating Screen: 3D Orbit Globe Projection
+            scr_rx = cx + fw * 0.46 - scr_w
+            p.setBrush(QBrush(QColor(2, 10, 18, 160)))
+            p.setPen(QPen(QColor(c_cyan.red(), c_cyan.green(), c_cyan.blue(), 100), 1))
+            p.drawRoundedRect(QRectF(scr_rx, scr_ly, scr_w, scr_h), 4, 4)
+
+            p.setFont(QFont("Courier New", 5, QFont.Weight.Bold))
+            p.setPen(QPen(c_cyan, 1))
+            p.drawText(QRectF(scr_rx + 4, scr_ly + 3, scr_w - 8, 10), Qt.AlignmentFlag.AlignLeft, "◈ ORBIT // TRACK")
+
+            # Mini rotating globe/orbit inside top-right screen
+            p.save()
+            p.translate(scr_rx + scr_w / 2, scr_ly + 40)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(c_cyan.red(), c_cyan.green(), c_cyan.blue(), 130), 1))
             p.drawEllipse(QRectF(-18, -18, 36, 36))
-            p.rotate(self._tick * 1.5)
+            p.rotate(self._tick * 1.8)
             p.drawEllipse(QRectF(-18, -7, 36, 14))
             p.rotate(60)
             p.drawEllipse(QRectF(-18, -7, 36, 14))
             p.restore()
 
-            # Coordinates telemetry lines
-            p.setFont(QFont("Courier New", 6))
-            p.setPen(QPen(QColor(c_bright.red(), c_bright.green(), c_bright.blue(), 160), 1))
-            p.drawText(QRectF(scr_lx + 6, scr_ly + 68, scr_w - 12, 10), Qt.AlignmentFlag.AlignLeft, "LAT 37°46'N")
-            p.drawText(QRectF(scr_lx + 6, scr_ly + 78, scr_w - 12, 10), Qt.AlignmentFlag.AlignLeft, "LON 122°25'W")
-            p.drawText(QRectF(scr_lx + 6, scr_ly + 88, scr_w - 12, 10), Qt.AlignmentFlag.AlignLeft, "ALT 412.8 KM")
-            p.drawText(QRectF(scr_lx + 6, scr_ly + 98, scr_w - 12, 10), Qt.AlignmentFlag.AlignLeft, "VEL 7.66 KM/S")
-            p.setFont(QFont("Courier New", 5, QFont.Weight.Bold))
-            p.setPen(QPen(c_main, 1))
-            p.drawText(QRectF(scr_lx + 6, scr_ly + 108, scr_w - 12, 10), Qt.AlignmentFlag.AlignLeft, "SYNC // LOCKED")
-
-            # Right Floating Screen: Tactical Radar Scope
-            scr_rx = cx + fw * 0.45 - scr_w
-            scr_ry = cy - scr_h / 2
-
-            p.setBrush(QBrush(QColor(2, 10, 18, 140)))
-            p.setPen(QPen(QColor(c_main.red(), c_main.green(), c_main.blue(), 90), 1))
-            p.drawRoundedRect(QRectF(scr_rx, scr_ry, scr_w, scr_h), 4, 4)
-
-            # Right screen header
-            p.setFont(QFont("Courier New", 6, QFont.Weight.Bold))
-            p.setPen(QPen(c_bright, 1))
-            p.drawText(QRectF(scr_rx + 6, scr_ry + 4, scr_w - 12, 12), Qt.AlignmentFlag.AlignLeft, "◈ RADAR // SCAN")
-
-            # Tactical radar scope with sweeping beam
-            r_cx = scr_rx + scr_w / 2
-            r_cy = scr_ry + 40
-            p.setBrush(Qt.BrushStyle.NoBrush)
+            # 4. Mid-Right Floating Screen: Target Telemetry Scope
+            p.setBrush(QBrush(QColor(2, 10, 18, 160)))
             p.setPen(QPen(QColor(c_main.red(), c_main.green(), c_main.blue(), 100), 1))
-            p.drawEllipse(QRectF(r_cx - 18, r_cy - 18, 36, 36))
-            p.drawEllipse(QRectF(r_cx - 9, r_cy - 9, 18, 18))
-            p.drawLine(QPointF(r_cx - 18, r_cy), QPointF(r_cx + 18, r_cy))
-            p.drawLine(QPointF(r_cx, r_cy - 18), QPointF(r_cx, r_cy + 18))
+            p.drawRoundedRect(QRectF(scr_rx, scr2_ly, scr_w, scr2_h), 4, 4)
 
-            # Sweeping beam line
-            sw_rad = math.radians(self._scan)
-            p.setPen(QPen(c_bright, 1.5))
-            p.drawLine(QPointF(r_cx, r_cy), QPointF(r_cx + 18 * math.cos(sw_rad), r_cy + 18 * math.sin(sw_rad)))
+            p.setFont(QFont("Courier New", 5, QFont.Weight.Bold))
+            p.setPen(QPen(c_bright, 1))
+            p.drawText(QRectF(scr_rx + 4, scr2_ly + 3, scr_w - 8, 10), Qt.AlignmentFlag.AlignLeft, "◈ TARGET // SCOPE")
 
-            # Radar blips
+            tr_cx = scr_rx + scr_w / 2
+            tr_cy = scr2_ly + 40
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(c_bright.red(), c_bright.green(), c_bright.blue(), 120), 1, Qt.PenStyle.DashLine))
+            p.drawEllipse(QRectF(tr_cx - 18, tr_cy - 18, 36, 36))
+            p.drawEllipse(QRectF(tr_cx - 9, tr_cy - 9, 18, 18))
+
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QBrush(c_hot))
-            p.drawEllipse(QPointF(r_cx + 7, r_cy - 8), 2, 2)
-            p.drawEllipse(QPointF(r_cx - 9, r_cy + 6), 2, 2)
+            p.drawEllipse(QPointF(tr_cx + 8, tr_cy - 7), 2, 2)
+            p.drawEllipse(QPointF(tr_cx - 6, tr_cy + 8), 2, 2)
 
-            # Target telemetry lines
-            p.setFont(QFont("Courier New", 6))
+            p.setFont(QFont("Courier New", 5))
             p.setPen(QPen(QColor(c_bright.red(), c_bright.green(), c_bright.blue(), 160), 1))
-            p.drawText(QRectF(scr_rx + 6, scr_ry + 68, scr_w - 12, 10), Qt.AlignmentFlag.AlignLeft, "TGT LOCK-01")
-            p.drawText(QRectF(scr_rx + 6, scr_ry + 78, scr_w - 12, 10), Qt.AlignmentFlag.AlignLeft, "RNG 14.8 KM")
-            p.drawText(QRectF(scr_rx + 6, scr_ry + 88, scr_w - 12, 10), Qt.AlignmentFlag.AlignLeft, "SIG 99.2%")
-            p.drawText(QRectF(scr_rx + 6, scr_ry + 98, scr_w - 12, 10), Qt.AlignmentFlag.AlignLeft, "BRG 042° TRUE")
-            p.setFont(QFont("Courier New", 5, QFont.Weight.Bold))
-            p.setPen(QPen(c_cyan, 1))
-            p.drawText(QRectF(scr_rx + 6, scr_ry + 108, scr_w - 12, 10), Qt.AlignmentFlag.AlignLeft, "STATUS // ACTIVE")
+            p.drawText(QRectF(scr_rx + 4, scr2_ly + 68, scr_w - 8, 8), Qt.AlignmentFlag.AlignLeft, "LAT 37°46'N")
+            p.drawText(QRectF(scr_rx + 4, scr2_ly + 78, scr_w - 8, 8), Qt.AlignmentFlag.AlignLeft, "LON 122°25'W")
 
         # ── 1C. HOLOGRAPHIC BASE PEDESTAL & PROJECTOR BEAMS ──────────────────
-        ped_y = cy + fw * 0.29
-        ped_w = fw * 0.52
-        ped_h = fw * 0.11
+        ped_y = cy + fw * 0.28
+        ped_w = fw * 0.58
+        ped_h = fw * 0.13
 
         # Upward holographic projection beam cone
         beam_grad = QLinearGradient(cx, ped_y, cx, cy)
-        beam_c1 = QColor(c_main); beam_c1.setAlpha(min(80, int(self._halo * 0.5)))
+        beam_c1 = QColor(c_cyan); beam_c1.setAlpha(min(90, int(self._halo * 0.6)))
         beam_c2 = QColor(c_bright); beam_c2.setAlpha(0)
         beam_grad.setColorAt(0.0, beam_c1)
         beam_grad.setColorAt(1.0, beam_c2)
 
         beam_path = QPainterPath()
-        beam_path.moveTo(cx - ped_w * 0.35, ped_y)
-        beam_path.lineTo(cx - fw * 0.20 * self._scale, cy + fw * 0.10)
-        beam_path.lineTo(cx + fw * 0.20 * self._scale, cy + fw * 0.10)
-        beam_path.lineTo(cx + ped_w * 0.35, ped_y)
+        beam_path.moveTo(cx - ped_w * 0.38, ped_y)
+        beam_path.lineTo(cx - fw * 0.22 * self._scale, cy + fw * 0.08)
+        beam_path.lineTo(cx + fw * 0.22 * self._scale, cy + fw * 0.08)
+        beam_path.lineTo(cx + ped_w * 0.38, ped_y)
         beam_path.closeSubpath()
 
         p.setBrush(QBrush(beam_grad))
@@ -822,22 +873,27 @@ class HudCanvas(QWidget):
         p.drawPath(beam_path)
 
         # Concentric base projector rings
-        for pw_f, ph_f, p_al, p_w in [(1.0, 1.0, 140, 1.5), (0.75, 0.75, 180, 1.2), (0.48, 0.48, 220, 1.0)]:
+        for pw_f, ph_f, p_al, p_w, p_col_base in [
+            (1.0, 1.0, 150, 2.0, c_cyan),
+            (0.82, 0.82, 190, 1.8, c_main),
+            (0.60, 0.60, 230, 1.5, c_bright),
+            (0.38, 0.38, 255, 1.2, c_hot)
+        ]:
             rw, rh = ped_w * pw_f, ped_h * ph_f
-            col_ped = QColor(c_bright if p_al > 200 else c_main)
+            col_ped = QColor(p_col_base)
             col_ped.setAlpha(p_al)
-            p.setPen(QPen(col_ped, p_w, Qt.PenStyle.DashLine if p_al < 200 else Qt.PenStyle.SolidLine))
+            p.setPen(QPen(col_ped, p_w))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(QRectF(cx - rw / 2, ped_y - rh / 2, rw, rh))
 
         # Base emitter tick marks
-        for deg in range(0, 360, 20):
+        for deg in range(0, 360, 15):
             r_rad = math.radians(deg)
             ex = cx + (ped_w * 0.5) * math.cos(r_rad)
             ey = ped_y + (ped_h * 0.5) * math.sin(r_rad)
             p.setBrush(QBrush(c_hot))
             p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(QPointF(ex, ey), 1.6, 1.6)
+            p.drawEllipse(QPointF(ex, ey), 1.8, 1.8)
 
         # Outer expanding pulse waves
         for pr in self._pulses:
@@ -847,12 +903,12 @@ class HudCanvas(QWidget):
             p.drawEllipse(QRectF(cx - pr, cy - pr, pr * 2, pr * 2))
 
         # ── 2. VOLUMETRIC GOLDEN CORE GLOW (INNER PLASMA SUN) ─────────────────
-        core_r = fw * 0.24 * self._scale
-        glow_rad = QRadialGradient(cx, cy, core_r * 2.1)
-        g_center = QColor(c_hot);    g_center.setAlpha(min(255, int(self._halo * 1.8)))
-        g_mid1   = QColor(c_bright); g_mid1.setAlpha(min(230, int(self._halo * 1.4)))
-        g_mid2   = QColor(c_main);   g_mid2.setAlpha(min(180, int(self._halo * 0.9)))
-        g_outer  = QColor(c_warm);   g_outer.setAlpha(min(90, int(self._halo * 0.4)))
+        core_r = fw * 0.25 * self._scale
+        glow_rad = QRadialGradient(cx, cy, core_r * 2.2)
+        g_center = QColor(c_hot);    g_center.setAlpha(min(255, int(self._halo * 1.9)))
+        g_mid1   = QColor(c_bright); g_mid1.setAlpha(min(240, int(self._halo * 1.5)))
+        g_mid2   = QColor(c_main);   g_mid2.setAlpha(min(190, int(self._halo * 1.0)))
+        g_outer  = QColor(c_warm);   g_outer.setAlpha(min(100, int(self._halo * 0.5)))
         g_edge   = QColor(c_deep);   g_edge.setAlpha(0)
 
         glow_rad.setColorAt(0.0, g_center)
@@ -863,10 +919,9 @@ class HudCanvas(QWidget):
 
         p.setBrush(QBrush(glow_rad))
         p.setPen(Qt.PenStyle.NoPen)
-        p.drawEllipse(QRectF(cx - core_r * 2.1, cy - core_r * 2.1, core_r * 4.2, core_r * 4.2))
+        p.drawEllipse(QRectF(cx - core_r * 2.2, cy - core_r * 2.2, core_r * 4.4, core_r * 4.4))
 
         # ── 3. 3D ROTATING GIMBAL ORBITAL RINGS ───────────────────────────────
-        # Draw 3D inclined orbital rings around the sphere
         gimbal_configs = [
             (fw * 0.32 * self._scale, self._orbit_angles[0], 0.65, c_bright, 1.8),
             (fw * 0.36 * self._scale, self._orbit_angles[1], -0.45, c_main, 1.5),
@@ -878,7 +933,6 @@ class HudCanvas(QWidget):
             p.rotate(math.degrees(tilt_val))
             p.scale(1.0, 0.42 + 0.10 * math.sin(self._tick * 0.03))
 
-            # Segmented ring drawing
             g_rect = QRectF(-r_gimb, -r_gimb, r_gimb * 2, r_gimb * 2)
             col_a = QColor(ring_col); col_a.setAlpha(min(220, int(self._halo * 1.1)))
             p.setPen(QPen(col_a, pen_w, Qt.PenStyle.DashLine))
@@ -886,7 +940,6 @@ class HudCanvas(QWidget):
             p.drawArc(g_rect, int(rot_a * 16), int(140 * 16))
             p.drawArc(g_rect, int((rot_a + 180) * 16), int(110 * 16))
 
-            # Traveling energy photon nodes on the orbital ring
             node_rad = math.radians(rot_a)
             nx = r_gimb * math.cos(node_rad)
             ny = r_gimb * math.sin(node_rad)
@@ -895,8 +948,7 @@ class HudCanvas(QWidget):
             p.drawEllipse(QPointF(nx, ny), 3.2, 3.2)
             p.restore()
 
-        # ── 4. 3D HOLOGRAPHIC SPHERICAL INTELLIGENCE LATTICE ───────────────────
-        # 3D Euler rotation matrix
+        # ── 4. 3D HOLOGRAPHIC EARTH GLOBE LATTICE & CONTINENTS ─────────────────
         cos_y, sin_y = math.cos(self._yaw), math.sin(self._yaw)
         cos_p, sin_p = math.cos(self._pitch), math.sin(self._pitch)
         cos_r, sin_r = math.cos(self._roll), math.sin(self._roll)
@@ -907,28 +959,39 @@ class HudCanvas(QWidget):
         # Project outer sphere lattice nodes
         projected_nodes: list[tuple[float, float, float, int, int]] = []
         for x, y, z, lat_idx, lon_idx in self._sphere_nodes:
-            # Yaw (Y-axis)
             x1 = x * cos_y - z * sin_y
             z1 = x * sin_y + z * cos_y
-            # Pitch (X-axis)
             y2 = y * cos_p - z1 * sin_p
             z2 = y * sin_p + z1 * cos_p
-            # Roll (Z-axis)
             x3 = x1 * cos_r - y2 * sin_r
             y3 = x1 * sin_r + y2 * cos_r
             z3 = z2
 
-            # Perspective scale
             sc = dist / (dist - z3)
             px = cx + x3 * sphere_r * sc
             py = cy + y3 * sphere_r * sc
             projected_nodes.append((px, py, z3, lat_idx, lon_idx))
 
+        # Project continent landmass nodes
+        projected_land: list[tuple[float, float, float]] = []
+        for x, y, z in self._land_nodes:
+            x1 = x * cos_y - z * sin_y
+            z1 = x * sin_y + z * cos_y
+            y2 = y * cos_p - z1 * sin_p
+            z2 = y * sin_p + z1 * cos_p
+            x3 = x1 * cos_r - y2 * sin_r
+            y3 = x1 * sin_r + y2 * cos_r
+            z3 = z2
+
+            sc = dist / (dist - z3)
+            px = cx + x3 * sphere_r * sc
+            py = cy + y3 * sphere_r * sc
+            projected_land.append((px, py, z3))
+
         # Draw wireframe circuit connector lines between adjacent grid points
-        lats_count, lons_count = 12, 22
+        lats_count, lons_count = 14, 24
         p.setBrush(Qt.BrushStyle.NoBrush)
         for idx, (px, py, z, i, j) in enumerate(projected_nodes):
-            # Connect to longitude neighbor
             next_lon_idx = (j + 1) % lons_count
             neighbor_idx = i * lons_count + next_lon_idx
             if neighbor_idx < len(projected_nodes):
@@ -940,7 +1003,6 @@ class HudCanvas(QWidget):
                 p.setPen(QPen(line_col, 1.0 if avg_z > 0 else 0.7))
                 p.drawLine(QPointF(px, py), QPointF(n_px, n_py))
 
-            # Connect to latitude neighbor
             if i < lats_count - 1:
                 lat_neighbor_idx = (i + 1) * lons_count + j
                 if lat_neighbor_idx < len(projected_nodes):
@@ -952,9 +1014,21 @@ class HudCanvas(QWidget):
                     p.setPen(QPen(line_col, 1.0 if avg_z > 0 else 0.7))
                     p.drawLine(QPointF(px, py), QPointF(n_px, n_py))
 
-        # Draw projected sphere nodes (Depth sorted: back to front)
+        # Draw Earth continent landmass points (Depth sorted)
+        for px, py, z in sorted(projected_land, key=lambda n: n[2]):
+            depth_factor = (z + 1.0) / 2.0
+            if depth_factor > 0.35:
+                l_sz = 2.0 + depth_factor * 2.5
+                l_alpha = min(255, int(depth_factor * 220 + 35))
+                l_col = QColor(c_hot if depth_factor > 0.7 else c_bright)
+                l_col.setAlpha(l_alpha)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(l_col))
+                p.drawEllipse(QPointF(px, py), l_sz, l_sz)
+
+        # Draw projected sphere nodes (Depth sorted)
         for px, py, z, i, j in sorted(projected_nodes, key=lambda n: n[2]):
-            depth_factor = (z + 1.0) / 2.0  # 0.0 (far back) to 1.0 (front)
+            depth_factor = (z + 1.0) / 2.0
             pt_sz = 1.6 + depth_factor * 2.8 + (amp * 2.0 if depth_factor > 0.6 else 0.0)
             pt_alpha = max(40, min(255, int(depth_factor * 200 + 45 + amp * 60)))
 
@@ -970,21 +1044,13 @@ class HudCanvas(QWidget):
             p.setBrush(QBrush(pt_col))
             p.drawEllipse(QPointF(px, py), pt_sz, pt_sz)
 
-            # Node glow spark for closest front nodes
-            if depth_factor > 0.82 and (i + j + self._tick // 4) % 5 == 0:
-                glow_c = QColor(c_hot); glow_c.setAlpha(min(255, int(pt_alpha * 0.7)))
-                p.setBrush(QBrush(glow_c))
-                p.drawEllipse(QPointF(px, py), pt_sz * 1.8, pt_sz * 1.8)
-
         # ── 5. AMBIENT ORBITING DUST & BURST PARTICLES ─────────────────────────
-        # Ambient orbital spark particles
         for theta, phi, r_off, spd, sz, a_phase in self._ambient_particles:
             r_curr = sphere_r * r_off
             ax = r_curr * math.cos(phi) * math.cos(theta)
             ay = r_curr * math.sin(phi)
             az = r_curr * math.cos(phi) * math.sin(theta)
 
-            # 3D Rotate
             ax1 = ax * cos_y - az * sin_y
             az1 = ax * sin_y + az * cos_y
             ay2 = ay * cos_p - az1 * sin_p
@@ -1013,7 +1079,6 @@ class HudCanvas(QWidget):
             p.drawEllipse(QPointF(bx, by), b_sz * life, b_sz * life)
 
         # ── 6. CENTER HOLOGRAPHIC ASSISTANT IDENTITY ───────────────────────────
-        # Center HUD reticle & glow text
         if self._face_px:
             fsz = int(fw * 0.44 * self._scale)
             q_sz = max(1, (fsz // 4) * 4)
@@ -1073,83 +1138,51 @@ class HudCanvas(QWidget):
             p.setPen(QPen(QColor(c_hot.red(), c_hot.green(), c_hot.blue(), txt_alpha), 1))
             p.drawText(QRectF(cx - 90, cy - 12, 180, 24), Qt.AlignmentFlag.AlignCenter, self._assistant_name)
 
-        # ── 7. STATUS & LISTENING INDICATOR (BELOW CORE) ───────────────────────
-        sy = cy + fw * 0.38
-        if self.muted:
-            txt, col = "⊘  MUTED", QColor(C.MUTED_C)
-            mic_sym = "⊘"
-        elif self.speaking:
-            txt, col = "●  SPEAKING", QColor(c_bright)
-            mic_sym = "🎙"
-        elif self.state == "THINKING":
-            sym = "◈" if self._blink else "◇"
-            txt, col = f"{sym}  THINKING...", QColor(c_bright)
-            mic_sym = "⚡"
-        elif self.state == "PROCESSING":
-            sym = "▷" if self._blink else "▶"
-            txt, col = f"{sym}  PROCESSING...", QColor(c_bright)
-            mic_sym = "⚙"
-        elif self.state == "LISTENING":
-            sym = "●" if self._blink else "○"
-            txt, col = f"{sym}  LISTENING...", QColor(c_bright)
-            mic_sym = "🎙"
-        else:
-            sym = "●" if self._blink else "○"
-            txt, col = f"{sym}  {self.state}", QColor(c_main)
-            mic_sym = "●"
+        # ── 7. CENTRAL CIRCULAR MICROPHONE BUTTON & FLANKING HORIZONTAL WAVES ─
+        sy = cy + fw * 0.37
+        mic_btn_r = 22 + amp * 4
 
-        # Indicator Pill Frame
-        pill_w, pill_h = 220, 26
-        pill_x = cx - pill_w / 2
-        p.setBrush(QBrush(QColor(5, 12, 20, 180)))
-        p.setPen(QPen(QColor(col.red(), col.green(), col.blue(), 140), 1.2))
-        p.drawRoundedRect(QRectF(pill_x, sy - 2, pill_w, pill_h), 13, 13)
+        # Circular glowing gold microphone button (like replica image)
+        mic_grad = QRadialGradient(cx, sy, mic_btn_r * 1.5)
+        mic_grad.setColorAt(0.0, QColor(c_bright))
+        mic_grad.setColorAt(0.7, QColor(c_main))
+        mic_grad.setColorAt(1.0, QColor(c_warm))
+        p.setBrush(QBrush(QColor(12, 6, 2, 220)))
+        p.setPen(QPen(QColor(c_bright), 1.8))
+        p.drawEllipse(QRectF(cx - mic_btn_r, sy - mic_btn_r, mic_btn_r * 2, mic_btn_r * 2))
 
-        p.setPen(QPen(col, 1))
-        p.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
-        p.drawText(QRectF(pill_x, sy - 2, pill_w, pill_h), Qt.AlignmentFlag.AlignCenter, txt)
+        # Microphone Icon inside button
+        p.setFont(QFont("Segoe UI Emoji", 14) if _OS == "Windows" else QFont("Arial", 14))
+        p.setPen(QPen(c_hot, 1))
+        p.drawText(QRectF(cx - mic_btn_r, sy - mic_btn_r, mic_btn_r * 2, mic_btn_r * 2), Qt.AlignmentFlag.AlignCenter, "🎙")
 
-        # ── 7B. FLANKING EQUALIZER WAVES (LEFT & RIGHT OF PILL) ───────────────
-        flank_bars = 6
-        bar_w = 4
-        bar_gap = 3
-        # Left flanking bars
-        for b_idx in range(flank_bars):
-            b_x = pill_x - 14 - (flank_bars - b_idx) * (bar_w + bar_gap)
-            b_h = max(3, int(6 + amp * 18.0 * math.sin(self._tick * 0.3 + b_idx * 0.8)))
-            p.fillRect(QRectF(b_x, sy + pill_h / 2 - b_h / 2, bar_w, b_h), QColor(c_bright if amp > 0.05 else c_main))
-        # Right flanking bars
-        for b_idx in range(flank_bars):
-            b_x = pill_x + pill_w + 14 + b_idx * (bar_w + bar_gap)
-            b_h = max(3, int(6 + amp * 18.0 * math.sin(self._tick * 0.3 + b_idx * 0.8)))
-            p.fillRect(QRectF(b_x, sy + pill_h / 2 - b_h / 2, bar_w, b_h), QColor(c_bright if amp > 0.05 else c_main))
+        # "Listening..." glowing label below button
+        p.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        p.setPen(QPen(c_bright, 1))
+        stat_lbl = "Listening..." if self.state == "LISTENING" else (
+            "Speaking..." if self.speaking else ("Thinking..." if self.state == "THINKING" else self.state)
+        )
+        p.drawText(QRectF(cx - 60, sy + mic_btn_r + 4, 120, 14), Qt.AlignmentFlag.AlignCenter, stat_lbl)
 
-        # ── 8. AUDIO WAVEFORM FREQUENCY EQUALIZER ──────────────────────────────
-        wy = sy + 32
-        N, bw = 40, 7
-        wx0 = (W - N * bw) / 2
-        mid = (N - 1) / 2.0
+        # ── 8. HORIZONTAL EQUALIZER WAVES FLANKING THE MIC BUTTON ─────────────
+        flank_n = 28
+        bw = 4
+        bgap = 2
+        # Left horizontal equalizer wave
+        for i in range(flank_n):
+            dist_f = i / float(flank_n)
+            env = math.sin(dist_f * math.pi) ** 0.85
+            hgt = max(2, int(4 + (16.0 * env + amp * 22.0 * env) * (0.6 + 0.4 * math.sin(self._tick * 0.25 + i * 0.5))))
+            bx = cx - mic_btn_r - 18 - (flank_n - i) * (bw + bgap)
+            p.fillRect(QRectF(bx, sy - hgt / 2, bw, hgt), QColor(c_bright if amp > 0.04 else c_main))
 
-        for i in range(N):
-            if self.muted:
-                hgt, cl = 2, QColor(C.MUTED_C)
-            else:
-                env = (1.0 - abs(i - mid) / mid) ** 0.65
-                shimmer = 0.55 + 0.45 * math.sin(self._tick * 0.22 + i * 0.6)
-                idle = 3.0 + 2.2 * math.sin(self._tick * 0.08 + i * 0.5)
-                hgt = int(max(2, min(28, idle + amp * 26.0 * env * shimmer)))
-
-                if amp > 0.04:
-                    cl = QColor(c_hot) if hgt > 16 else QColor(c_bright)
-                else:
-                    cl = QColor(c_warm if hgt > 4 else c_deep)
-
-            bar_rect = QRectF(wx0 + i * bw, wy + 26 - hgt, bw - 2, hgt)
-            p.fillRect(bar_rect, cl)
-
-            # Glowing peak highlight cap
-            if not self.muted and hgt > 6:
-                p.fillRect(QRectF(wx0 + i * bw, wy + 26 - hgt, bw - 2, 2), QColor(c_hot))
+        # Right horizontal equalizer wave
+        for i in range(flank_n):
+            dist_f = i / float(flank_n)
+            env = math.sin(dist_f * math.pi) ** 0.85
+            hgt = max(2, int(4 + (16.0 * env + amp * 22.0 * env) * (0.6 + 0.4 * math.sin(self._tick * 0.25 + i * 0.5))))
+            bx = cx + mic_btn_r + 18 + i * (bw + bgap)
+            p.fillRect(QRectF(bx, sy - hgt / 2, bw, hgt), QColor(c_bright if amp > 0.04 else c_main))
 
         p.end()
 
@@ -4224,11 +4257,12 @@ class MainWindow(QMainWindow):
         lay.addSpacing(2)
 
         # ── Status Badges ─────────────────────────────────────────────────────
-        self._badge_core = StatusBadge("AI CORE", "ACTIVE", "ai_core", C.GREEN)
-        self._badge_sec = StatusBadge("SECURITY", "CLEAN", "security", C.PRI)
+        self._badge_core = StatusBadge("AI CORE", "ACTIVE", "ai_core", "#ffaa00")
+        self._badge_sec = StatusBadge("SECURITY", "CLEAN", "security", C.GREEN)
+        self._badge_proto = StatusBadge("PROTOCOL", "CONNECTED", "protocol", "#c054ff")
         self._badge_voice = StatusBadge("VOICE", "READY", "voice", C.ACC2)
 
-        for badge in [self._badge_core, self._badge_sec, self._badge_voice]:
+        for badge in [self._badge_core, self._badge_sec, self._badge_proto, self._badge_voice]:
             lay.addWidget(badge)
 
         return w
