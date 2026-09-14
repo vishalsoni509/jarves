@@ -9,11 +9,23 @@ from pathlib import Path
 from datetime import datetime
 from urllib.parse import quote_plus
 
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 try:
     import pyautogui
     _PYAUTOGUI = True
 except ImportError:
     _PYAUTOGUI = False
+
+try:
+    import cv2
+    _CV2 = True
+except ImportError:
+    _CV2 = False
 
 try:
     import pygetwindow as gw
@@ -39,6 +51,12 @@ try:
 except ImportError:
     _TRANSCRIPT_OK = False
 
+try:
+    import mss
+    _MSS = True
+except ImportError:
+    _MSS = False
+
 from config import get_os, is_windows, is_mac, is_linux
 
 
@@ -62,10 +80,11 @@ HEADERS = {
 
 _YT_VIDEO_FILTER = "EgIQAQ%3D%3D"
 
-# Module-level handle for the browser process Jarvis opens.
-# Stored so that the 'close' action can terminate only *this* process
+# Module-level handles for the browser Jarvis opens.
+# Stored so that the 'close' action can terminate only *this* browser/window
 # (not every Chrome/Edge window on the system).
 _browser_proc: "subprocess.Popen | None" = None
+_browser_window = None
 
 
 def _get_api_key() -> str:
@@ -73,9 +92,41 @@ def _get_api_key() -> str:
         return json.load(f)["gemini_api_key"]
 
 
+def _remember_browser_window() -> None:
+    """Find and remember the browser window opened for the current URL."""
+    global _browser_window
+    if not _PYGETWINDOW:
+        return
+
+    try:
+        # Give the OS a moment to create the browser window before we try to
+        # capture it. This leaves the rest of the open logic unchanged.
+        for _ in range(12):
+            try:
+                all_windows = gw.getAllWindows()
+            except Exception:
+                all_windows = []
+
+            for win in all_windows:
+                try:
+                    title = (win.title or "").lower()
+                    if not win.visible or win.width <= 100:
+                        continue
+                    if "youtube" in title or any(kw in title for kw in _BROWSER_WINDOW_KEYWORDS):
+                        _browser_window = win
+                        print(f"[YouTube] 📎 Stored browser window ref: '{win.title}'")
+                        return
+                except Exception:
+                    continue
+            time.sleep(0.15)
+    except Exception as e:
+        print(f"[YouTube] ⚠️ Could not remember browser window: {e}")
+
+
 def _open_url(url: str) -> None:
     """Opens *url* in the OS default browser and stores the process handle."""
-    global _browser_proc
+    global _browser_proc, _browser_window
+    _browser_window = None
     try:
         if is_mac():
             _browser_proc = subprocess.Popen(["open", url])
@@ -96,6 +147,7 @@ def _open_url(url: str) -> None:
             )
         print(f"[YouTube] 📎 Stored browser proc PID: "
               f"{_browser_proc.pid if _browser_proc else 'n/a'}")
+        _remember_browser_window()
     except Exception as e:
         print(f"[YouTube] ⚠️ open_url failed: {e}")
 
@@ -431,6 +483,206 @@ _BROWSER_WINDOW_KEYWORDS = (
     "opera", "brave", "vivaldi",
 )
 
+_SKIP_AD_REGION_KEY = "youtube_skip_ad_region"
+_SKIP_AD_DEBOUNCE_SECONDS = 2.0
+_LAST_SKIP_CLICK_AT = 0.0
+_SKIP_AD_DEBUG = True
+
+
+def _load_json_config(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_json_config(path: Path, data: dict) -> None:
+    try:
+        path.write_text(json.dumps(data, indent=4), encoding="utf-8")
+    except Exception as e:
+        print(f"[YouTube] ⚠️  Could not save config at {path}: {e}")
+
+
+def _debug_skip_ad_capture(region_img: np.ndarray | None, region: tuple[int, int, int, int]) -> None:
+    if not _SKIP_AD_DEBUG or region_img is None:
+        return
+    try:
+        debug_path = BASE_DIR / "config" / "skip_region_debug.png"
+        ok = cv2.imwrite(str(debug_path), region_img)
+        print(f"[YouTube] [DEBUG] saved skip region capture -> {debug_path} ({ok}) region={region}")
+    except Exception as e:
+        print(f"[YouTube] [DEBUG] failed to save skip region capture: {e}")
+
+
+def _get_skip_ad_region() -> tuple[int, int, int, int]:
+    cfg_path = BASE_DIR / "config" / "api_keys.json"
+    cfg = _load_json_config(cfg_path)
+    raw = cfg.get(_SKIP_AD_REGION_KEY, [])
+
+    if isinstance(raw, (list, tuple)) and len(raw) == 4:
+        try:
+            region = tuple(int(v) for v in raw)
+            if all(v >= 0 for v in region):
+                print(f"[YouTube] [DEBUG] skip-ad region loaded from config: {region}")
+                return region
+        except Exception:
+            pass
+
+    if _PYAUTOGUI:
+        try:
+            w, h = pyautogui.size()
+            region = (
+                max(0, int(w * 0.62)),
+                max(0, int(h * 0.72)),
+                max(1, int(w * 0.28)),
+                max(1, int(h * 0.20)),
+            )
+            print(f"[YouTube] [DEBUG] skip-ad region fell back to screen-based defaults: {region}")
+            return region
+        except Exception:
+            pass
+
+    print("[YouTube] [DEBUG] skip-ad region fallback returned minimal rectangle: (0, 0, 1, 1)")
+    return (0, 0, 1, 1)
+
+
+def _save_skip_ad_region(region: tuple[int, int, int, int]) -> None:
+    cfg_path = BASE_DIR / "config" / "api_keys.json"
+    cfg = _load_json_config(cfg_path)
+    cfg[_SKIP_AD_REGION_KEY] = [int(v) for v in region]
+    _save_json_config(cfg_path, cfg)
+
+
+def _calibrate_skip_ad_region(region: tuple[int, int, int, int] | None = None) -> tuple[int, int, int, int]:
+    if region is None:
+        w, h = pyautogui.size() if _PYAUTOGUI else (1280, 720)
+        region = (
+            max(0, int(w * 0.62)),
+            max(0, int(h * 0.72)),
+            max(1, int(w * 0.28)),
+            max(1, int(h * 0.20)),
+        )
+    _save_skip_ad_region(region)
+    return region
+
+
+def _capture_region_np(region: tuple[int, int, int, int]) -> np.ndarray | None:
+    """Captures a specific screen region as a numpy array using mss, PIL ImageGrab, or pyautogui."""
+    rx, ry, rw, rh = region
+    if _MSS and _NUMPY and _CV2:
+        try:
+            with mss.mss() as sct:
+                monitor = {"left": rx, "top": ry, "width": rw, "height": rh}
+                sct_img = sct.grab(monitor)
+                img = np.array(sct_img)
+                return cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        except Exception:
+            pass
+
+    if _NUMPY:
+        try:
+            from PIL import ImageGrab
+            bbox = (rx, ry, rx + rw, ry + rh)
+            img = ImageGrab.grab(bbox=bbox)
+            arr = np.array(img)
+            return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR) if _CV2 else arr
+        except Exception:
+            pass
+
+    if _PYAUTOGUI and _NUMPY:
+        try:
+            arr = np.array(pyautogui.screenshot(region=region))
+            return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR) if _CV2 else arr
+        except Exception:
+            pass
+
+    return None
+
+
+def _locate_skip_button(region: tuple[int, int, int, int] | None = None) -> tuple[int, int] | None:
+    if not _PYAUTOGUI:
+        return None
+
+    region = region or _get_skip_ad_region()
+    print(f"[YouTube] [DEBUG] searching skip button in region={region}")
+    region_img = _capture_region_np(region)
+    if region_img is None:
+        print("[YouTube] [DEBUG] skip button search aborted: region capture returned None")
+        return None
+
+    _debug_skip_ad_capture(region_img, region)
+
+    skip_img_path = BASE_DIR / "config" / "skip_ad.png"
+    if skip_img_path.exists() and _CV2 and _NUMPY:
+        try:
+            template = cv2.imread(str(skip_img_path))
+            if template is not None:
+                th, tw = template.shape[:2]
+                res = cv2.matchTemplate(region_img, template, cv2.TM_CCOEFF_NORMED)
+                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+                print(
+                    f"[YouTube] [DEBUG] cv2.matchTemplate score={max_val:.4f} "
+                    f"threshold=0.70 region={region} template={skip_img_path.name}"
+                )
+                if max_val >= 0.70:
+                    cx = region[0] + max_loc[0] + (tw // 2)
+                    cy = region[1] + max_loc[1] + (th // 2)
+                    print(f"[YouTube] [DEBUG] skip button matched via template at ({cx}, {cy}) score={max_val:.4f}")
+                    return (cx, cy)
+                print(f"[YouTube] [DEBUG] skip template score below threshold: {max_val:.4f}")
+        except Exception as e:
+            print(f"[YouTube] ⚠️ cv2.matchTemplate search failed: {e}")
+
+    # Fallback template match via pyautogui locateCenterOnScreen
+    if skip_img_path.exists():
+        try:
+            pos = pyautogui.locateCenterOnScreen(str(skip_img_path), region=region, confidence=0.70)
+            print(f"[YouTube] [DEBUG] pyautogui locateCenterOnScreen result={pos}")
+            if pos:
+                return (int(pos[0]), int(pos[1]))
+        except Exception as e:
+            print(f"[YouTube] [DEBUG] pyautogui locateCenterOnScreen failed: {e}")
+
+    # High-contrast contour fallback detection for YouTube skip button (dark pill with white text)
+    if _CV2 and _NUMPY:
+        try:
+            gray = cv2.cvtColor(region_img, cv2.COLOR_BGR2GRAY) if len(region_img.shape) == 3 else region_img
+            _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            best = None
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                if area < 120:
+                    continue
+                x, y, w, h = cv2.boundingRect(contour)
+                if w < 20 or h < 10:
+                    continue
+                aspect = w / max(h, 1)
+                if aspect < 0.8 or aspect > 4.0:
+                    continue
+                if best is None or area > best[0]:
+                    best = (area, x, y, w, h)
+
+            if best:
+                area, x, y, w, h = best
+                print(f"[YouTube] [DEBUG] contour fallback found candidate area={area} size=({w}x{h})")
+                return (
+                    int(region[0] + x + (w / 2)),
+                    int(region[1] + y + (h / 2)),
+                )
+            print("[YouTube] [DEBUG] contour fallback found no viable button candidate")
+        except Exception as e:
+            print(f"[YouTube] ⚠️ Skip-button fallback detection failed: {e}")
+
+    print("[YouTube] [DEBUG] skip button detection failed for this cycle")
+    return None
+
+
+def is_skip_button_visible() -> bool:
+    """Simple state check for the existing command layer."""
+    return _locate_skip_button() is not None
+
 
 def _focus_browser_window() -> bool:
     """
@@ -495,9 +747,9 @@ def _handle_fullscreen(parameters: dict, player) -> str:
 
 def _handle_skip_ad(parameters: dict, player) -> str:
     """
-    Attempts to skip YouTube video advertisement.
-    Focuses the YouTube browser window first, then attempts to locate/click
-    the Skip Ad button or sends navigation keypresses. Graceful fallback if not found.
+    Attempts to skip the current YouTube ad by detecting the fixed skip button
+    region first, then clicking the button. Falls back to a best-effort
+    keyboard path only if the button is not visible.
     """
     if not _PYAUTOGUI:
         return "PyAutoGUI is not installed."
@@ -505,29 +757,29 @@ def _handle_skip_ad(parameters: dict, player) -> str:
     if player:
         player.write_log("[YouTube] Skip ad requested")
 
+    global _LAST_SKIP_CLICK_AT
+
     _focus_browser_window()
     import time as _time
     _time.sleep(0.2)
 
-    # Strategy 1: Look for reference screenshot in config/skip_ad.png
-    skip_img = BASE_DIR / "config" / "skip_ad.png"
-    if skip_img.exists():
-        try:
-            pos = pyautogui.locateCenterOnScreen(str(skip_img), confidence=0.7)
-            if pos:
-                pyautogui.click(pos)
-                return "Ad skipped, sir."
-        except Exception as e:
-            print(f"[YouTube] ⚠️ Skip ad image search failed: {e}")
+    region = _get_skip_ad_region()
+    pos = _locate_skip_button(region)
 
-    # Strategy 2: HTML5 player skip focus keypress
-    try:
-        pyautogui.press("tab")
-        _time.sleep(0.1)
-        pyautogui.press("enter")
-        return "Attempted to skip ad, sir."
-    except Exception as e:
-        return f"Could not skip ad: {e}"
+    if pos:
+        now = time.monotonic()
+        if now - _LAST_SKIP_CLICK_AT < _SKIP_AD_DEBOUNCE_SECONDS:
+            print(f"[YouTube] [DEBUG] skip debounce active: last click {now - _LAST_SKIP_CLICK_AT:.2f}s ago")
+            return "Skip button already handled recently, sir."
+        try:
+            pyautogui.click(pos)
+            _LAST_SKIP_CLICK_AT = now
+            print(f"[YouTube] [DEBUG] clicked skip button at {pos}")
+            return "Skipped, sir."
+        except Exception as e:
+            return f"Could not click the skip button: {e}"
+
+    return "No ad or skip button is currently available, sir."
 
 
 # ── Close browser helpers ─────────────────────────────────────────────────
@@ -553,8 +805,26 @@ def _close_via_proc_handle() -> bool:
         return False
 
 
+def _close_via_browser_window() -> bool:
+    """Tier 2: close the specific browser window Jarvis opened."""
+    global _browser_window
+    if _browser_window is None:
+        return False
+
+    try:
+        if getattr(_browser_window, "visible", False):
+            _browser_window.close()
+            print(f"[YouTube] ✅ Closed remembered browser window: '{_browser_window.title}'")
+        _browser_window = None
+        return True
+    except Exception as e:
+        print(f"[YouTube] ⚠️ remembered browser window close failed: {e}")
+        _browser_window = None
+        return False
+
+
 def _close_via_pygetwindow() -> bool:
-    """Tier 2: find a YouTube/browser window by title and close it."""
+    """Tier 3: find a YouTube/browser window by title and close it."""
     if not _PYGETWINDOW:
         return False
     try:
@@ -619,15 +889,19 @@ def _handle_close_browser(parameters: dict, player) -> str:
     # Capture PID before Tier 1 clears the handle
     saved_pid = _browser_proc.pid if _browser_proc else None
 
-    # Tier 1
+    # Tier 1: close the remembered browser window if one was captured.
+    if _close_via_browser_window():
+        return "Browser window closed, sir."
+
+    # Tier 2: terminate the exact process Jarvis launched.
     if _close_via_proc_handle():
         return "Browser closed, sir."
 
-    # Tier 2
+    # Tier 3: find a matching browser window by title.
     if _close_via_pygetwindow():
         return "Browser window closed, sir."
 
-    # Tier 3 (Windows only, PID-targeted)
+    # Tier 4 (Windows only, PID-targeted)
     if saved_pid and _close_via_taskkill(saved_pid):
         return "Browser process terminated, sir."
 
@@ -659,6 +933,8 @@ def youtube_video(
 ) -> str:
     params = parameters or {}
     action = params.get("action", "play").lower().strip()
+    if action in {"skip", "skip_this_ad", "skip_ad"}:
+        action = "skip_ad"
 
     if player:
         player.write_log(f"[YouTube] Action: {action}")
@@ -691,7 +967,8 @@ TOOL = {
         "currently playing video, skipping advertisements, or closing the browser window opened by Jarvis. "
         "Use action='fullscreen' when the user says 'full screen', 'make it full screen', "
         "'press f', 'fullscreen mode', or similar. "
-        "Use action='skip_ad' when the user says 'skip ad', 'skip this ad', 'skip advertisement'. "
+        "Use action='skip_ad' when the user says 'skip ad', 'skip this ad', 'skip advertisement', "
+        "or just 'skip'. "
         "Use action='close' when the user says 'close the browser', 'close this', "
         "'close the window', or 'close YouTube'."
     ),

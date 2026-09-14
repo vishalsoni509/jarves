@@ -69,7 +69,8 @@ from actions.background_monitor import (
 )
 from actions.web_search        import _news as _fetch_news_sync
 from memory.config_manager     import (
-    get_brief_enabled, get_voice, get_wake_word_enabled, save_wake_word_enabled,    get_input_device, get_output_device,
+    get_brief_enabled, get_voice, get_wake_word_enabled, save_wake_word_enabled, get_input_device, get_output_device,
+    get_persona_instruction, get_persona, get_voice_gender,
 )
 from core.plugin_loader        import discover_plugins
 from core                      import undo as undo_stack
@@ -729,7 +730,8 @@ class JarvisLive:
             f"{_addr}\n\n"
         )
 
-        parts = [time_ctx, identity_ctx]
+        persona_ctx = get_persona_instruction()
+        parts = [time_ctx, identity_ctx, persona_ctx]
         if mem_str:
             parts.append(mem_str)
         parts.append(sys_prompt)
@@ -888,7 +890,8 @@ class JarvisLive:
                 if name == "file_processor" and not args.get("file_path") and self.ui.current_file:
                     args["file_path"] = self.ui.current_file
                 _ctx = {"player": self.ui, "speak": self.speak,
-                        "response": None, "session_memory": None}
+                        "response": None, "session_memory": None,
+                        "jarvis": self, "reconnect": self.request_reconnect}
                 r = await loop.run_in_executor(None, lambda: self._action_registry.run(name, args, _ctx))
                 result = r or "Done."
                 # web_search: mirror results to the on-screen content panel

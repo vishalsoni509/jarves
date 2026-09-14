@@ -428,15 +428,22 @@ class TTSPlayer:
 
 def create_tts_player(config: dict) -> TTSPlayer:
     engine_name = config.get("tts_engine", "edgetts").lower()
+    gender = str(config.get("current_voice") or config.get("voice_gender") or "male").lower()
+    is_female = (gender == "female")
+
     if engine_name == "kokoro":
-        voice  = config.get("tts_voice", "af_heart")
+        default_v = "af_heart" if is_female else "am_adam"
+        voice  = config.get("tts_voice", default_v)
         speed  = float(config.get("tts_speed", 1.0))
         engine = KokoroTTSEngine(voice=voice, speed=speed)
     elif engine_name == "elevenlabs":
+        default_v = "21m00Tcm4TlvDq8ikWAM" if is_female else "pNInz6obpgDQGcFmaJgB"
         api_key  = config.get("elevenlabs_api_key", "")
-        voice_id = config.get("tts_voice", "pNInz6obpgDQGcFmaJgB")
+        voice_id = config.get("tts_voice", default_v)
         engine   = ElevenLabsTTSEngine(api_key=api_key, voice_id=voice_id)
     else:   # edgetts (default)
-        voice  = config.get("tts_voice", "en-US-GuyNeural")
+        default_v = "en-US-JennyNeural" if is_female else "en-US-GuyNeural"
+        voice  = config.get("tts_voice", default_v)
         engine = EdgeTTSEngine(voice=voice)
     return TTSPlayer(engine)
+
