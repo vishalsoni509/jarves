@@ -1,5 +1,5 @@
 """
-MARK LIII — one-time setup.
+System-Assist — one-time setup.
 
 Installs the Python dependencies for THIS operating system only: the OS-specific
 packages in requirements.txt carry `sys_platform` markers, so a macOS or Linux
@@ -23,7 +23,7 @@ def _run(label: str, args: list[str]) -> None:
 
 
 def main() -> None:
-    print(f"⚙  MARK LIII setup — detected OS: {OS or 'unknown'}")
+    print(f"⚙  System-Assist setup — detected OS: {OS or 'unknown'}")
 
     # requirements.txt filters OS-specific extras by itself via pip markers.
     _run("Installing Python dependencies (OS-specific extras auto-filtered)…",

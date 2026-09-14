@@ -39,7 +39,7 @@ from PyQt6.QtWidgets import (
 # Mark 52 and 53 shipped showing "PROTOCOL XLIX" — the number from Mark 49 — and
 # Mark 55 shipped titled "MARK 54". Deriving the protocol from the name means a
 # release bump is this one line.
-APP_VERSION  = "MARK LIII"
+APP_VERSION  = "System-Assist"
 APP_PROTOCOL = APP_VERSION.split()[-1]
 
 def _base_dir() -> Path:
@@ -3953,7 +3953,7 @@ class MainWindow(QMainWindow):
 
         lay.addWidget(_fl("[F4] Mute  ·  [F11] Fullscreen"))
         lay.addStretch()
-        lay.addWidget(_fl("By FatihMakes", C.PRI_DIM))
+        lay.addWidget(_fl("By Vishal Soni", C.PRI_DIM))
         return w
 
     def _on_file_selected(self, path: str):
