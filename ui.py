@@ -24,7 +24,7 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtGui import (
     QBrush, QColor, QConicalGradient, QDragEnterEvent, QDropEvent, QFont,
-    QFontDatabase, QKeySequence, QLinearGradient, QPainter, QPainterPath,
+    QFontDatabase, QIcon, QKeySequence, QLinearGradient, QPainter, QPainterPath,
     QPen, QPixmap, QRadialGradient, QShortcut,
 )
 from PyQt6.QtWidgets import (
@@ -1151,10 +1151,20 @@ class HudCanvas(QWidget):
         p.setPen(QPen(QColor(c_bright), 1.8))
         p.drawEllipse(QRectF(cx - mic_btn_r, sy - mic_btn_r, mic_btn_r * 2, mic_btn_r * 2))
 
-        # Microphone Icon inside button
-        p.setFont(QFont("Segoe UI Emoji", 14) if _OS == "Windows" else QFont("Arial", 14))
-        p.setPen(QPen(c_hot, 1))
-        p.drawText(QRectF(cx - mic_btn_r, sy - mic_btn_r, mic_btn_r * 2, mic_btn_r * 2), Qt.AlignmentFlag.AlignCenter, "🎙")
+        # Microphone Icon inside button — from mj.png sprite sheet
+        mic_px = IconManager.get_pixmap("mic_active", int(mic_btn_r * 1.15))
+        if mic_px and not mic_px.isNull():
+            p.drawPixmap(
+                int(cx - mic_px.width() / 2), int(sy - mic_px.height() / 2), mic_px
+            )
+        else:
+            # Fallback: drawn mic glyph (only if mj.png icon sheet is unavailable)
+            p.setPen(QPen(c_hot, 2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(cx, sy - 4), 5, 5)
+            p.drawRoundedRect(QRectF(cx - 4, sy + 1, 8, 9), 3, 3)
+            p.drawLine(QPointF(cx - 7, sy + 9), QPointF(cx + 7, sy + 9))
+            p.drawLine(QPointF(cx - 2, sy + 13), QPointF(cx + 2, sy + 13))
 
         # "Listening..." glowing label below button
         p.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
@@ -1206,9 +1216,7 @@ class IconManager:
         if cls._loaded:
             return
         cls._loaded = True
-        icon_path = CONFIG_DIR / "mj"
-        if not icon_path.exists():
-            icon_path = CONFIG_DIR / "mj.png"
+        icon_path = CONFIG_DIR / "mj.png"
         if not icon_path.exists():
             return
         try:
@@ -1431,7 +1439,7 @@ class LeftNavButton(QPushButton):
 
 
 class StatusBadge(QWidget):
-    """Glowing status indicator card with icon and active indicator."""
+    """Glowing status indicator card with icon and active indicator dot."""
     def __init__(self, title: str, status: str, icon_name: str, color: str = C.GREEN, parent=None):
         super().__init__(parent)
         self.title = title
@@ -1451,17 +1459,35 @@ class StatusBadge(QWidget):
         p.setPen(QPen(QColor(C.BORDER_A), 1))
         p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 4, 4)
 
-        px = IconManager.get_pixmap(self.icon_name, 24)
+        # Icon from mj.png
+        px = IconManager.get_pixmap(self.icon_name, 22)
         if px and not px.isNull():
-            p.drawPixmap(5, 5, px)
+            p.drawPixmap(6, 6, px)
+        else:
+            # Fallback: coloured dot
+            p.setBrush(QBrush(qcol(self.color, 160)))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(8, 8, 18, 18)
 
+        # Title
         p.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
         p.setPen(QPen(qcol(self.color), 1))
-        p.drawText(QRectF(34, 4, W - 38, 13), Qt.AlignmentFlag.AlignLeft, self.title)
+        p.drawText(QRectF(32, 4, W - 66, 13), Qt.AlignmentFlag.AlignLeft, self.title)
 
+        # Status text
         p.setFont(QFont("Courier New", 6))
         p.setPen(QPen(qcol(C.TEXT_DIM), 1))
-        p.drawText(QRectF(34, 17, W - 38, 13), Qt.AlignmentFlag.AlignLeft, self.status)
+        p.drawText(QRectF(32, 17, W - 66, 13), Qt.AlignmentFlag.AlignLeft, self.status)
+
+        # Active indicator dot (pulsing green / status colour)
+        dot_col = qcol(self.color)
+        p.setBrush(QBrush(dot_col))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(W - 18, 10, 12, 12)
+        # Inner glow
+        glow_col = qcol(self.color, 90)
+        p.setBrush(QBrush(glow_col))
+        p.drawEllipse(W - 16, 12, 8, 8)
 
         p.end()
 
@@ -1558,12 +1584,13 @@ class LogWidget(QTextEdit):
             QTimer.singleShot(20, self._next)
 
 _FILE_ICONS = {
-    "image":   ("🖼", "#00d4ff"), "video":   ("🎬", "#ff6b00"),
-    "audio":   ("🎵", "#cc44ff"), "pdf":     ("📄", "#ff4444"),
-    "word":    ("📝", "#4488ff"), "excel":   ("📊", "#44bb44"),
-    "code":    ("💻", "#ffcc00"), "archive": ("📦", "#ff8844"),
-    "pptx":    ("📊", "#ff6622"), "text":    ("📃", "#aaaaaa"),
-    "data":    ("🔧", "#88ddff"), "unknown": ("📎", "#888888"),
+    # category -> (mj.png icon name, colour)
+    "image":   ("vision",      "#00d4ff"), "video":   ("analyze",    "#ff6b00"),
+    "audio":   ("voice",       "#cc44ff"), "pdf":     ("file_upload", "#ff4444"),
+    "word":    ("file_upload", "#4488ff"), "excel":   ("storage",    "#44bb44"),
+    "code":    ("code",        "#ffcc00"), "archive": ("folder",     "#ff8844"),
+    "pptx":    ("analyze",     "#ff6622"), "text":    ("file_upload", "#aaaaaa"),
+    "data":    ("storage",     "#88ddff"), "unknown": ("folder",     "#888888"),
 }
 _EXT_TO_CAT = {
     **dict.fromkeys(["jpg","jpeg","png","gif","webp","bmp","tiff","svg","ico"], "image"),
@@ -1592,6 +1619,7 @@ def _fmt_size(size: int) -> str:
 
 class FileDropZone(QWidget):
     file_selected = pyqtSignal(str)
+    cleared       = pyqtSignal()   # the ✕ was pressed — the loaded file is gone
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1653,6 +1681,7 @@ class FileDropZone(QWidget):
 
     def clear_file(self):
         self._current_file = None; self._canvas.update()
+        self.cleared.emit()
 
     def _browse(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -1740,9 +1769,11 @@ class _DropCanvas(QWidget):
         if px and not px.isNull():
             p.drawPixmap(int(cx - 18), int(cy - 28), px)
         else:
-            p.setFont(QFont("Courier New", 20))
-            p.setPen(QPen(qcol(C.PRI), 1))
-            p.drawText(QRectF(0, cy - 24, W, 32), Qt.AlignmentFlag.AlignCenter, "⬇")
+            p.setPen(QPen(qcol(C.PRI), 2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawLine(QPointF(cx, cy - 14), QPointF(cx, cy + 6))
+            p.drawLine(QPointF(cx - 8, cy - 6), QPointF(cx, cy - 14))
+            p.drawLine(QPointF(cx + 8, cy - 6), QPointF(cx, cy - 14))
         p.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         p.setPen(QPen(qcol(C.PRI), 1))
         p.drawText(QRectF(0, cy + 14, W, 16), Qt.AlignmentFlag.AlignCenter, "Release to load")
@@ -1755,9 +1786,14 @@ class _DropCanvas(QWidget):
         ext_str  = path.suffix.upper().lstrip(".") or "FILE"
 
         block_x, block_w = 10, 60
-        p.setFont(QFont("Segoe UI Emoji", 22) if _OS == "Windows" else QFont("Arial", 22))
-        p.setPen(QPen(qcol(icon_col), 1))
-        p.drawText(QRectF(block_x, 0, block_w, H), Qt.AlignmentFlag.AlignCenter, icon)
+        # Icon from mj.png sprite sheet (fallback: text block)
+        px = IconManager.get_pixmap(icon, 44)
+        if px and not px.isNull():
+            p.drawPixmap(int(block_x + (block_w - 44) / 2), int((H - 44) / 2), px)
+        else:
+            p.setFont(QFont("Courier New", 22, QFont.Weight.Bold))
+            p.setPen(QPen(qcol(icon_col), 1))
+            p.drawText(QRectF(block_x, 0, block_w, H), Qt.AlignmentFlag.AlignCenter, "◈")
 
         tx = block_x + block_w + 6
         tw = W - tx - 38
@@ -1929,7 +1965,7 @@ class SetupOverlay(QWidget):
 
         os_row = QHBoxLayout(); os_row.setSpacing(6)
         self._os_btns: dict[str, QPushButton] = {}
-        for key, label in [("windows","⊞  Windows"),("mac","  macOS"),("linux","🐧  Linux")]:
+        for key, label in [("windows","WINDOWS"),("mac","MACOS"),("linux","LINUX")]:
             btn = QPushButton(label)
             btn.setFont(QFont("Courier New", 9, QFont.Weight.Bold))
             btn.setFixedHeight(32)
@@ -2115,7 +2151,7 @@ class CustomizeOverlay(QWidget):
                f"border: 1px solid {C.BORDER}; border-radius: 3px; padding: 4px 8px; }}"
                f"QLineEdit:focus {{ border: 1px solid {C.PRI}; }}")
 
-        lay.addWidget(_lbl("⚙  CUSTOMISE ASSISTANT", 12, True))
+        lay.addWidget(_lbl("◈ CUSTOMISE ASSISTANT", 12, True))
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         lay.addWidget(sep)
@@ -2322,7 +2358,7 @@ class PluginManagerOverlay(QWidget):
         lay.setContentsMargins(20, 16, 20, 16)
         lay.setSpacing(6)
 
-        hdr = QLabel("🧩  PLUGIN MANAGER")
+        hdr = QLabel("◈ PLUGIN MANAGER")
         hdr.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
         hdr.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         lay.addWidget(hdr)
@@ -2544,7 +2580,7 @@ class AudioDeviceOverlay(_HudOverlay):
         lay.setContentsMargins(20, 16, 20, 16)
         lay.setSpacing(6)
 
-        hdr = QLabel("🎧  AUDIO DEVICES")
+        hdr = QLabel("◈ AUDIO DEVICES")
         hdr.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
         hdr.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         lay.addWidget(hdr)
@@ -2738,7 +2774,7 @@ class MemoryOverlay(_HudOverlay):
 
         from memory.memory_manager import all_entries_for_ui
 
-        hdr = QLabel("🧠  WHAT JARVIS REMEMBERS")
+        hdr = QLabel("◈ WHAT JARVIS REMEMBERS")
         hdr.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
         hdr.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         self._lay.addWidget(hdr)
@@ -2925,6 +2961,371 @@ class ClipboardPanel(QWidget):
         self._dismiss_timer.start(8000)
 
 
+class EnglishTutorOverlay(QWidget):
+    """
+    English Tutor / Speaking Mentor panel.
+
+    Shows below/around the central AI Core when the ENGLISH TUTOR nav is active:
+      - Current topic & question
+      - Listening / Analyzing / Feedback state lights
+      - Four separate scores (Grammar / Vocabulary / Fluency / Pronunciation)
+      - Word practice + sentence shadowing buttons
+      - Daily coaching mode
+    Uses config/mj.png icons only — never jarvis.ico, never emoji.
+    """
+
+    # Actions emitted to the backend (JarvisLive wires these):
+    #   request_speak(text)  — make JARVIS speak
+    #   request_record()     — start mic capture for tutor
+    #   request_feedback()   — analyze captured audio + transcript
+    speak_requested    = pyqtSignal(str)
+    record_requested   = pyqtSignal()
+    feedback_requested = pyqtSignal()
+    next_question_requested = pyqtSignal()
+
+    # ── Thread-safe update channels ─────────────────────────────────────────
+    # The tutor is driven from the asyncio loop and from worker threads (see
+    # JarvisLive), and touching a QWidget — least of all its QTextDocument —
+    # from a foreign thread is what produced
+    #   "QObject: Cannot create children for a parent that is in a different
+    #    thread. (Parent is QTextDocument…)"
+    # followed by the window dying. These signals are the ONLY entry point for
+    # the public setters below: emitting a signal is safe from any thread, and
+    # the connected slots are guaranteed to run on the Qt main thread.
+    _state_sig    = pyqtSignal(str)
+    _question_sig = pyqtSignal(str, str)
+    _feedback_sig = pyqtSignal(dict)
+    _progress_sig = pyqtSignal(dict)
+    _hearing_sig  = pyqtSignal(str)
+
+    _W, _H = 620, 384
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(f"""
+            EnglishTutorOverlay {{
+                background: rgba(1, 10, 18, 246);
+                border: 1px solid {C.BORDER_B};
+                border-radius: 8px;
+            }}
+        """)
+        self.setFixedSize(self._W, self._H)
+        self._state = "IDLE"   # IDLE | LISTENING | ANALYZING | FEEDBACK | PRACTICE | SHADOWING | DAILY_COACH
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(14, 10, 14, 10)
+        lay.setSpacing(6)
+
+        # ── Header ───────────────────────────────────────────────────────────
+        hdr = QHBoxLayout(); hdr.setSpacing(8)
+        _tutor_icon = IconManager.get_pixmap("voice", 24)
+        icon_lbl = QLabel()
+        if _tutor_icon and not _tutor_icon.isNull():
+            icon_lbl.setPixmap(_tutor_icon)
+        icon_lbl.setFixedSize(24, 24)
+        hdr.addWidget(icon_lbl)
+
+        title_col = QVBoxLayout(); title_col.setSpacing(0)
+        self._title_lbl = QLabel("ENGLISH TUTOR")
+        self._title_lbl.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
+        self._title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
+        title_col.addWidget(self._title_lbl)
+        self._sub_lbl = QLabel("Speaking Mentor")
+        self._sub_lbl.setFont(QFont("Courier New", 7))
+        self._sub_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        title_col.addWidget(self._sub_lbl)
+        hdr.addLayout(title_col)
+        hdr.addStretch()
+
+        self._state_lbl = QLabel("IDLE")
+        self._state_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._state_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        hdr.addWidget(self._state_lbl)
+        lay.addLayout(hdr)
+
+        # ── Topic / Question ─────────────────────────────────────────────────
+        self._topic_lbl = QLabel("CURRENT TOPIC: General Conversation")
+        self._topic_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        self._topic_lbl.setStyleSheet(
+            f"color: {C.ACC2}; background: {C.PANEL2}; border: 1px solid {C.BORDER}; "
+            f"border-radius: 3px; padding: 3px 6px;"
+        )
+        lay.addWidget(self._topic_lbl)
+
+        self._question_lbl = QLabel("Tell me about your day so far.")
+        self._question_lbl.setFont(QFont("Courier New", 8))
+        self._question_lbl.setStyleSheet(
+            f"color: {C.TEXT}; background: {C.DARK}; border: 1px solid {C.BORDER}; "
+            f"border-radius: 3px; padding: 4px 6px;"
+        )
+        self._question_lbl.setWordWrap(True)
+        lay.addWidget(self._question_lbl)
+
+        # ── State lights row ─────────────────────────────────────────────────
+        status_row = QHBoxLayout(); status_row.setSpacing(12)
+        self._light_listen = self._make_light("LISTENING", C.PRI)
+        self._light_analyze = self._make_light("ANALYZING", C.ACC2)
+        self._light_feedback = self._make_light("FEEDBACK", C.GREEN)
+        status_row.addWidget(self._light_listen)
+        status_row.addWidget(self._light_analyze)
+        status_row.addWidget(self._light_feedback)
+        status_row.addStretch()
+        lay.addLayout(status_row)
+
+        # ── Scores row ───────────────────────────────────────────────────────
+        self._scores_row = QHBoxLayout(); self._scores_row.setSpacing(8)
+        self._score_grammar  = self._make_score("GRAMMAR", C.PRI)
+        self._score_vocab    = self._make_score("VOCAB", C.ACC2)
+        self._score_fluency  = self._make_score("FLUENCY", C.GREEN)
+        self._score_prono    = self._make_score("PRONUNO", "#c054ff")
+        self._score_overall  = self._make_score("OVERALL", C.ACC)
+        for w in [self._score_grammar, self._score_vocab, self._score_fluency,
+                  self._score_prono, self._score_overall]:
+            self._scores_row.addWidget(w, stretch=1)
+        lay.addLayout(self._scores_row)
+
+        # ── Feedback area ────────────────────────────────────────────────────
+        self._feedback_view = QTextEdit()
+        self._feedback_view.setReadOnly(True)
+        self._feedback_view.setFixedHeight(86)
+        self._feedback_view.setFont(QFont("Courier New", 7))
+        self._feedback_view.setStyleSheet(f"""
+            QTextEdit {{
+                background: {C.DARK};
+                color: {C.TEXT};
+                border: 1px solid {C.BORDER};
+                border-radius: 3px;
+                padding: 4px 6px;
+            }}
+        """)
+        lay.addWidget(self._feedback_view)
+
+        # ── Action buttons ───────────────────────────────────────────────────
+        btn_row = QHBoxLayout(); btn_row.setSpacing(5)
+
+        self._practice_btn = self._make_btn("PRACTICE", "voice")
+        self._practice_btn.clicked.connect(self._on_practice)
+        btn_row.addWidget(self._practice_btn)
+
+        self._shadow_btn = self._make_btn("SHADOWING", "code")
+        self._shadow_btn.clicked.connect(self._on_shadowing)
+        btn_row.addWidget(self._shadow_btn)
+
+        self._daily_btn = self._make_btn("DAILY COACH", "ai_core")
+        self._daily_btn.clicked.connect(self._on_daily)
+        btn_row.addWidget(self._daily_btn)
+
+        self._hear_btn = self._make_btn("HEAR", "voice")
+        self._hear_btn.clicked.connect(self._on_hear)
+        btn_row.addWidget(self._hear_btn)
+
+        self._next_btn = self._make_btn("NEXT TOPIC", "refresh")
+        self._next_btn.clicked.connect(lambda: self.next_question_requested.emit())
+        btn_row.addWidget(self._next_btn)
+
+        btn_row.addStretch()
+        self._close_btn = self._make_btn("CLOSE", "stop")
+        self._close_btn.clicked.connect(self.hide)
+        btn_row.addWidget(self._close_btn)
+        lay.addLayout(btn_row)
+
+        # Route every public setter through its signal (see the signal block for
+        # why). Queued connections guarantee the slots below run on the Qt main
+        # thread no matter which thread emitted.
+        self._state_sig.connect(self._apply_state_ui)
+        self._question_sig.connect(self._apply_question_ui)
+        self._feedback_sig.connect(self._apply_feedback_ui)
+        self._progress_sig.connect(self._apply_progress_ui)
+        self._hearing_sig.connect(self._apply_hearing_ui)
+
+        self.hide()
+
+    # ── UI helpers ──────────────────────────────────────────────────────────
+
+    def _make_light(self, label: str, color: str) -> QWidget:
+        w = QWidget()
+        w.setFixedSize(112, 22)
+        l = QLabel(f"●  {label}")
+        l.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        l.setStyleSheet(f"color: {color}; background: transparent;")
+        lay = QHBoxLayout(w); lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(l)
+        lay.addStretch()
+        return w
+
+    def _make_score(self, label: str, color: str) -> QWidget:
+        w = QWidget()
+        w.setStyleSheet(
+            f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 3px;"
+        )
+        v = QVBoxLayout(w); v.setContentsMargins(6, 3, 6, 3); v.setSpacing(0)
+        l = QLabel(label)
+        l.setFont(QFont("Courier New", 6, QFont.Weight.Bold))
+        l.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
+        v.addWidget(l)
+        val = QLabel("--")
+        val.setFont(QFont("Courier New", 11, QFont.Weight.Bold))
+        val.setStyleSheet(f"color: {color}; background: transparent;")
+        val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(val)
+        setattr(w, "_value_lbl", val)
+        return w
+
+    def _make_btn(self, text: str, icon_name: str) -> QPushButton:
+        b = QPushButton(f"  {text}")
+        b.setFixedHeight(26)
+        b.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        px = IconManager.get_pixmap(icon_name, 14)
+        if px and not px.isNull():
+            b.setIcon(QIcon(px))
+            b.setIconSize(QSize(14, 14))
+        b.setStyleSheet(f"""
+            QPushButton {{
+                background: {C.PANEL2}; color: {C.TEXT_MED};
+                border: 1px solid {C.BORDER}; border-radius: 3px;
+            }}
+            QPushButton:hover {{ background: {C.PRI_GHO}; color: {C.PRI}; border-color: {C.BORDER_B}; }}
+        """)
+        return b
+
+    # ── Public API (called from MainWindow / JarvisLive) ───────────────────
+
+    def set_state(self, state: str):
+        """Thread-safe. Queue a state change for the Qt main thread."""
+        self._state_sig.emit(state)
+
+    def _apply_state_ui(self, state: str):
+        """Slot — runs on the Qt main thread. state: IDLE|LISTENING|ANALYZING|FEEDBACK."""
+        self._state = state
+        colors = {
+            "IDLE": C.TEXT_DIM, "LISTENING": C.PRI,
+            "ANALYZING": C.ACC2, "FEEDBACK": C.GREEN,
+            "PRACTICE": C.ACC, "SHADOWING": C.ACC, "DAILY_COACH": C.ACC,
+        }
+        c = colors.get(state, C.TEXT_DIM)
+        self._state_lbl.setText(state)
+        self._state_lbl.setStyleSheet(f"color: {c}; background: transparent;")
+
+        self._set_light(self._light_listen, state == "LISTENING")
+        self._set_light(self._light_analyze, state == "ANALYZING")
+        self._set_light(self._light_feedback, state == "FEEDBACK")
+
+    def _set_light(self, widget: QWidget, on: bool):
+        lbl = widget.findChild(QLabel)
+        if lbl:
+            cur = lbl.text().replace("●  ", "").replace("○  ", "")
+            marker = "●  " if on else "○  "
+            lbl.setText(f"{marker}{cur}")
+
+    def set_question(self, question: str, topic: str = "General Conversation"):
+        """Thread-safe. Queue a new question for the Qt main thread."""
+        self._question_sig.emit(str(question), str(topic))
+
+    def _apply_question_ui(self, question: str, topic: str):
+        """Slot — runs on the Qt main thread."""
+        self._topic_lbl.setText(f"CURRENT TOPIC: {topic}")
+        self._question_lbl.setText(question)
+        self._feedback_view.clear()
+
+    def show_feedback(self, report: dict):
+        """Thread-safe. Queue a report for the Qt main thread."""
+        self._feedback_sig.emit(dict(report or {}))
+
+    def _apply_feedback_ui(self, report: dict):
+        """Slot — runs on the Qt main thread. Combined tutor report."""
+        scores = report.get("scores", {})
+        for name, key, widget in [
+            ("GRAMMAR", "grammar", self._score_grammar),
+            ("VOCAB", "vocabulary", self._score_vocab),
+            ("FLUENCY", "fluency", self._score_fluency),
+            ("PRONUNO", "pronunciation", self._score_prono),
+            ("OVERALL", "overall", self._score_overall),
+        ]:
+            val = scores.get(key) if isinstance(scores, dict) else None
+            lbl = getattr(widget, "_value_lbl")
+            lbl.setText(f"{val:.0f}/10" if isinstance(val, (int, float)) else "--")
+
+        parts = []
+        gf = report.get("overall_feedback", "")
+        if gf:
+            parts.append(gf)
+
+        # Fluency
+        fl = report.get("fluency_issues", {})
+        if isinstance(fl, dict):
+            fillers = fl.get("filler_words", [])
+            if fillers:
+                parts.append("FILLER: " + ", ".join(f'"{f.get("word","")}"×{f.get("count",0)}' for f in fillers[:3]))
+            sug = fl.get("suggestion", "")
+            if sug:
+                parts.append(sug)
+
+        # Pronunciation
+        pr = report.get("pronunciation", {})
+        if isinstance(pr, dict):
+            if not pr.get("available"):
+                parts.append("PRONUNCIATION: " + pr.get("message", "Unavailable for this response."))
+            else:
+                for i in pr.get("issues", [])[:2]:
+                    parts.append(
+                        f'PRONUNCIATION "{i.get("word","")}": {i.get("issue","")} -> {i.get("practice","")}'
+                    )
+
+        # WPM
+        pace = report.get("speaking_speed", {})
+        if isinstance(pace, dict) and pace.get("wpm"):
+            parts.append(f'SPEED: {pace.get("wpm")} WPM — {pace.get("assessment","")}')
+
+        self._feedback_view.setPlainText("\n".join(parts) if parts else "No feedback available.")
+
+    def show_progress(self, progress: dict):
+        """Thread-safe. Queue a progress report for the Qt main thread."""
+        self._progress_sig.emit(dict(progress or {}))
+
+    def _apply_progress_ui(self, progress: dict):
+        """Slot — runs on the Qt main thread. Previous vs current comparison."""
+        parts = []
+        imp = progress.get("improvements", [])
+        if imp:
+            parts.append("IMPROVEMENTS vs previous sessions:")
+            for k in imp:
+                parts.append(f"  + {k.upper()}")
+        else:
+            parts.append("No significant changes from previous sessions yet.")
+        self._feedback_view.setPlainText("\n".join(parts))
+
+    def set_hearing(self, word: str):
+        """Thread-safe. Queue a practice word for the Qt main thread."""
+        self._hearing_sig.emit(str(word))
+
+    def _apply_hearing_ui(self, word: str):
+        """Slot — runs on the Qt main thread. Show the practice word."""
+        self._question_lbl.setText(f'TARGET: {word}\n\nYOUR TURN — repeat the word.')
+
+    # ── Button handlers ─────────────────────────────────────────────────────
+
+    def _on_practice(self):
+        self.speak_requested.emit("START_PRACTICE")
+        self.set_state("PRACTICE")
+
+    def _on_shadowing(self):
+        self.speak_requested.emit("START_SHADOWING")
+        self.set_state("SHADOWING")
+
+    def _on_daily(self):
+        self.speak_requested.emit("START_DAILY_COACH")
+        self.set_state("DAILY_COACH")
+
+    def _on_hear(self):
+        self.speak_requested.emit("HEAR_WORD")
+
+    def show_overlay(self):
+        self.show()
+        self.raise_()
+
+
 class PluginSettingsOverlay(QWidget):
     """Floating overlay — renders per-plugin settings forms.
 
@@ -2963,7 +3364,7 @@ class PluginSettingsOverlay(QWidget):
         root.setContentsMargins(22, 16, 22, 16)
         root.setSpacing(8)
 
-        root.addWidget(self._lbl("⚙  PLUGIN SETTINGS", 12, True))
+        root.addWidget(self._lbl("◈ PLUGIN SETTINGS", 12, True))
         sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"color: {C.BORDER}; margin: 2px 0;")
         root.addWidget(sep)
@@ -3336,7 +3737,7 @@ class RemoteKeyOverlay(QWidget):
                           Qt.TransformationMode.SmoothTransformation)
             )
         except ImportError:
-            self._qr_label.setText("pip install\nqrcode[pil]")
+            self._qr_label.setText("pip install qrcode[pil]")
             self._qr_label.setFont(QFont("Courier New", 8))
             self._qr_label.setStyleSheet(
                 "color: #888; background: white; border-radius: 10px; padding: 4px;"
@@ -3421,6 +3822,7 @@ class MainWindow(QMainWindow):
     _confirm_sig    = pyqtSignal(str, str)   # (title, detail) — irreversible-action gate
     _confirm_hide_sig = pyqtSignal()
     _wake_dl_sig    = pyqtSignal(bool, str)  # wake-word install finished (ok, message)
+    _phone_conn_sig = pyqtSignal()           # phone paired (fired from the asyncio thread)
 
     def __init__(self, face_path: str):
         super().__init__()
@@ -3562,6 +3964,12 @@ class MainWindow(QMainWindow):
         self._metric_tmr.start(2000)
         self._update_metrics()
 
+        # Footer news ticker
+        self._news_tmr = QTimer(self)
+        self._news_tmr.timeout.connect(self._update_news)
+        self._news_tmr.start(5000)
+        self._update_news()
+
         self._log_sig.connect(self._log.append_log)
         self._state_sig.connect(self._apply_state)
         self._content_sig.connect(self._show_content)
@@ -3573,6 +3981,7 @@ class MainWindow(QMainWindow):
         self._cam_frame_sig.connect(self._on_cam_frame)
         self._clipboard_sig.connect(self._show_clipboard_panel)
         self._wake_dl_sig.connect(self._on_wake_install_done)
+        self._phone_conn_sig.connect(self._apply_phone_connected)
         self._cam_stop = threading.Event()
 
         # Camera preview overlay (child of central widget, positioned in resizeEvent)
@@ -3582,6 +3991,10 @@ class MainWindow(QMainWindow):
         self._clipboard_panel = ClipboardPanel(self.centralWidget())
         self._clipboard_panel.action_requested.connect(self._on_clipboard_action)
         QApplication.clipboard().dataChanged.connect(self._on_clipboard_changed)
+
+        # English Tutor overlay (child of central widget, positioned below HUD)
+        self._tutor_overlay = EnglishTutorOverlay(self.centralWidget())
+        self._tutor_active = False
 
         self._overlay: SetupOverlay | None = None
         self._ready = self._check_config()
@@ -4056,6 +4469,9 @@ class MainWindow(QMainWindow):
         # Clipboard panel — bottom-center
         if hasattr(self, '_clipboard_panel') and self._clipboard_panel.isVisible():
             self._position_clipboard_panel()
+        # English Tutor overlay — reposition below HUD
+        if hasattr(self, '_tutor_overlay') and self._tutor_overlay.isVisible():
+            self._position_tutor_overlay()
         # Quick drawer — reposition if open
         if hasattr(self, '_quick_drawer') and self._quick_drawer.isVisible():
             self._position_quick_drawer()
@@ -4110,6 +4526,33 @@ class MainWindow(QMainWindow):
         except Exception:
             self._proc_lbl.setText("PROC  --")
 
+    def _update_news(self):
+        """Rotate technical telemetry news tickers in the footer news strip."""
+        try:
+            if not hasattr(self, "_footer_news"):
+                return
+            snap = _metrics.snapshot()
+            cpu = snap["cpu"]
+            mem = snap["mem"]
+            net = snap["net"]
+            gpu = snap["gpu"]
+            tmp = snap["tmp"]
+            gpu_s = f"{gpu:.0f}%" if gpu >= 0 else "N/A"
+            tmp_s = f"{tmp:.0f}°C" if tmp >= 0 else "N/A"
+            net_s = f"{net*1024:.0f}KB/s" if net < 1.0 else f"{net:.1f}MB/s"
+            msgs = [
+                f"CPU LOAD ▸ {cpu:.0f}%",
+                f"MEMORY ▸ {mem:.0f}%",
+                f"NETWORK ▸ {net_s}",
+                f"GPU ▸ {gpu_s}",
+                f"TEMP ▸ {tmp_s}",
+                f"AI CORE ▸ {APP_PROTOCOL} PROTOCOL ONLINE",
+            ]
+            tag = int(time.time()) // 5 % len(msgs)
+            self._footer_news.setText(f"NEWS FEED ▸ {msgs[tag]}")
+        except Exception:
+            pass
+
 
     def _build_header(self) -> QWidget:
         w = QWidget()
@@ -4118,19 +4561,22 @@ class MainWindow(QMainWindow):
         lay = QHBoxLayout(w)
         lay.setContentsMargins(16, 0, 16, 0)
 
-        def _badge(txt, color=C.TEXT_MED):
-            l = QLabel(txt)
-            l.setFont(QFont("Courier New", 8))
-            l.setStyleSheet(f"color: {color}; background: transparent;")
-            return l
+        # ── Left cluster: version badge + settings icon ────────────────────────
+        left_col = QHBoxLayout()
+        left_col.setSpacing(6)
+        ver = QLabel(APP_VERSION)
+        ver.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        ver.setStyleSheet(f"color: {C.PRI_DIM}; background: transparent;")
+        left_col.addWidget(ver)
 
-        lay.addWidget(_badge(APP_VERSION, C.PRI_DIM))
-        lay.addSpacing(8)
-        self._drawer_btn = QPushButton("⚙")
+        self._drawer_btn = QPushButton()
         self._drawer_btn.setFixedSize(26, 26)
-        self._drawer_btn.setFont(QFont("Courier New", 11))
         self._drawer_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._drawer_btn.setToolTip("Settings & Controls")
+        _settings_px = IconManager.get_pixmap("settings", 20)
+        if _settings_px and not _settings_px.isNull():
+            self._drawer_btn.setIcon(QIcon(_settings_px))
+            self._drawer_btn.setIconSize(QSize(20, 20))
         self._drawer_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; color: {C.TEXT_DIM};
@@ -4141,9 +4587,11 @@ class MainWindow(QMainWindow):
         """)
         self._drawer_btn.setCheckable(True)
         self._drawer_btn.clicked.connect(self._toggle_drawer)
-        lay.addWidget(self._drawer_btn)
+        left_col.addWidget(self._drawer_btn)
+        lay.addLayout(left_col)
         lay.addStretch()
 
+        # ── Center: title + subtitle ───────────────────────────────────────────
         mid = QVBoxLayout(); mid.setSpacing(1)
         _disp = self._assistant_name.upper()
         self._title_lbl = QLabel(_disp)
@@ -4162,6 +4610,7 @@ class MainWindow(QMainWindow):
         lay.addLayout(mid)
         lay.addStretch()
 
+        # ── Right cluster: clock + protocol indicator ──────────────────────────
         right_col = QVBoxLayout(); right_col.setSpacing(2)
         self._clock_lbl = QLabel("00:00:00")
         self._clock_lbl.setFont(QFont("Courier New", 14, QFont.Weight.Bold))
@@ -4241,6 +4690,7 @@ class MainWindow(QMainWindow):
         self._nav_auto = LeftNavButton("AUTOMATION", "System Tasks", "automation")
         self._nav_code = LeftNavButton("CODE", "Write & Debug", "code")
         self._nav_system = LeftNavButton("SYSTEM", "Control Device", "system")
+        self._nav_tutor = LeftNavButton("TUTOR", "English Speaking", "voice")
 
         self._nav_chat.clicked.connect(lambda: self._on_nav_clicked("chat"))
         self._nav_search.clicked.connect(lambda: self._on_nav_clicked("search"))
@@ -4249,9 +4699,11 @@ class MainWindow(QMainWindow):
         self._nav_auto.clicked.connect(lambda: self._on_nav_clicked("automation"))
         self._nav_code.clicked.connect(lambda: self._on_nav_clicked("code"))
         self._nav_system.clicked.connect(lambda: self._on_nav_clicked("system"))
+        self._nav_tutor.clicked.connect(lambda: self._on_nav_clicked("tutor"))
 
         for btn in [self._nav_chat, self._nav_search, self._nav_gen,
-                    self._nav_analyze, self._nav_auto, self._nav_code, self._nav_system]:
+                    self._nav_analyze, self._nav_auto, self._nav_code, self._nav_system,
+                    self._nav_tutor]:
             lay.addWidget(btn)
 
         lay.addSpacing(2)
@@ -4272,7 +4724,7 @@ class MainWindow(QMainWindow):
         for b, k in [(self._nav_chat, "chat"), (self._nav_search, "search"),
                      (self._nav_gen, "generate"), (self._nav_analyze, "analyze"),
                      (self._nav_auto, "automation"), (self._nav_code, "code"),
-                     (self._nav_system, "system")]:
+                     (self._nav_system, "system"), (self._nav_tutor, "tutor")]:
             b.set_active(k == key)
 
         if key == "chat":
@@ -4296,6 +4748,17 @@ class MainWindow(QMainWindow):
             self._input.setFocus()
         elif key == "system":
             self._send_command("System status report")
+        elif key == "tutor":
+            # Toggle tutor overlay on/off
+            if self._tutor_overlay.isVisible():
+                self._tutor_overlay.hide()
+                self._tutor_active = False
+            else:
+                self._tutor_active = True
+                self._position_tutor_overlay()
+                self._tutor_overlay.show_overlay()
+                # Request tutor start from the backend
+                self._send_command("Start English Tutor session")
 
     def _send_command(self, cmd_text: str):
         if not cmd_text: return
@@ -4327,6 +4790,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(_sec("FILE UPLOAD"))
         self._drop_zone = FileDropZone()
         self._drop_zone.file_selected.connect(self._on_file_selected)
+        self._drop_zone.cleared.connect(self._on_file_cleared)
         lay.addWidget(self._drop_zone)
 
         self._file_hint = QLabel("No file loaded — drop or click above to upload")
@@ -4342,10 +4806,14 @@ class MainWindow(QMainWindow):
         lay.addWidget(_sec("COMMAND INPUT"))
         lay.addLayout(self._build_input_row())
 
-        self._interrupt_btn = QPushButton("✋  INTERRUPT  [ESC]")
+        self._interrupt_btn = QPushButton("  INTERRUPT  [ESC]")
         self._interrupt_btn.setFixedHeight(34)
         self._interrupt_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         self._interrupt_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _int_px = IconManager.get_pixmap("interrupt", 18)
+        if _int_px and not _int_px.isNull():
+            self._interrupt_btn.setIcon(QIcon(_int_px))
+            self._interrupt_btn.setIconSize(QSize(18, 18))
         self._interrupt_btn.setStyleSheet(f"""
             QPushButton {{
                 background: #140008; color: {C.MUTED_C};
@@ -4361,10 +4829,14 @@ class MainWindow(QMainWindow):
         self._interrupt_btn.clicked.connect(self._do_interrupt)
         lay.addWidget(self._interrupt_btn)
 
-        self._mute_btn = QPushButton("🎙  MICROPHONE ACTIVE")
+        self._mute_btn = QPushButton("  MICROPHONE ACTIVE")
         self._mute_btn.setFixedHeight(30)
         self._mute_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         self._mute_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        _mic_px = IconManager.get_pixmap("mic_active", 18)
+        if _mic_px and not _mic_px.isNull():
+            self._mute_btn.setIcon(QIcon(_mic_px))
+            self._mute_btn.setIconSize(QSize(18, 18))
         self._mute_btn.clicked.connect(self._toggle_mute)
         self._style_mute_btn()
         lay.addWidget(self._mute_btn)
@@ -4372,7 +4844,7 @@ class MainWindow(QMainWindow):
         return w
 
     def _build_quick_drawer(self) -> QWidget:
-        """Floating overlay panel shown when the ⚙ header button is toggled."""
+        """Floating overlay panel shown when the settings header button is toggled."""
         _BTN_STYLE_PRI = f"""
             QPushButton {{
                 background: #00091a; color: {C.PRI};
@@ -4412,101 +4884,65 @@ class MainWindow(QMainWindow):
                           f"border-bottom: 1px solid {C.BORDER}; padding-bottom: 4px;")
         lay.addWidget(hdr)
 
-        remote_btn = QPushButton("◉  REMOTE CONTROL")
-        remote_btn.setFixedHeight(30)
-        remote_btn.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
-        remote_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        remote_btn.setStyleSheet(_BTN_STYLE_PRI)
+        def _drawer_btn(text, icon_name, style, height=26):
+            btn = QPushButton(f"  {text}")
+            btn.setFixedHeight(height)
+            btn.setFont(QFont("Courier New", 7))
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(style)
+            px = IconManager.get_pixmap(icon_name, 16)
+            if px and not px.isNull():
+                btn.setIcon(QIcon(px))
+                btn.setIconSize(QSize(16, 16))
+            return btn
+
+        remote_btn = _drawer_btn("REMOTE CONTROL", "command", _BTN_STYLE_PRI, 30)
         remote_btn.clicked.connect(self._open_remote)
         lay.addWidget(remote_btn)
 
-        fs_btn = QPushButton("⛶  FULLSCREEN  [F11]")
-        fs_btn.setFixedHeight(26)
-        fs_btn.setFont(QFont("Courier New", 7))
-        fs_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        fs_btn.setStyleSheet(_BTN_STYLE_DIM)
+        fs_btn = _drawer_btn("FULLSCREEN  [F11]", "system", _BTN_STYLE_DIM)
         fs_btn.clicked.connect(self._toggle_fullscreen)
         lay.addWidget(fs_btn)
 
-        sc_btn = QPushButton("⊞  CREATE DESKTOP SHORTCUT")
-        sc_btn.setFixedHeight(26)
-        sc_btn.setFont(QFont("Courier New", 7))
-        sc_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        sc_btn.setStyleSheet(_BTN_STYLE_DIM)
+        sc_btn = _drawer_btn("CREATE DESKTOP SHORTCUT", "folder", _BTN_STYLE_DIM)
         sc_btn.clicked.connect(self._create_desktop_shortcut)
         lay.addWidget(sc_btn)
 
-        self._autostart_btn = QPushButton("◉  AUTO-START: OFF")
-        self._autostart_btn.setFixedHeight(26)
-        self._autostart_btn.setFont(QFont("Courier New", 7))
-        self._autostart_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._autostart_btn = _drawer_btn("AUTO-START: OFF", "start", _BTN_STYLE_DIM)
         self._autostart_btn.clicked.connect(self._toggle_autostart)
         lay.addWidget(self._autostart_btn)
 
-        cust_btn = QPushButton("⚙  CUSTOMISE ASSISTANT")
-        cust_btn.setFixedHeight(26)
-        cust_btn.setFont(QFont("Courier New", 7))
-        cust_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        cust_btn.setStyleSheet(_BTN_STYLE_DIM)
+        cust_btn = _drawer_btn("CUSTOMISE ASSISTANT", "settings", _BTN_STYLE_DIM)
         cust_btn.clicked.connect(self._open_customize)
         lay.addWidget(cust_btn)
 
-        self._brief_btn = QPushButton()
-        self._brief_btn.setFixedHeight(26)
-        self._brief_btn.setFont(QFont("Courier New", 7))
-        self._brief_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._brief_btn = _drawer_btn("BRIEFING: OFF", "news", _BTN_STYLE_DIM)
         self._brief_btn.clicked.connect(self._toggle_brief)
         lay.addWidget(self._brief_btn)
 
         # ── Wake word ──────────────────────────────────────────────────────────
-        self._wake_btn = QPushButton()
-        self._wake_btn.setFixedHeight(26)
-        self._wake_btn.setFont(QFont("Courier New", 7))
-        self._wake_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._wake_btn = _drawer_btn("WAKE WORD", "mic_active", _BTN_STYLE_DIM)
         self._wake_btn.clicked.connect(self._toggle_wake_word)
         lay.addWidget(self._wake_btn)
 
-        self._wake_sleep_btn = QPushButton()
-        self._wake_sleep_btn.setFixedHeight(26)
-        self._wake_sleep_btn.setFont(QFont("Courier New", 7))
-        self._wake_sleep_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._wake_sleep_btn = _drawer_btn("SLEEP/WAKE", "voice", _BTN_STYLE_DIM)
         self._wake_sleep_btn.clicked.connect(self._tap_wake_manual)
         lay.addWidget(self._wake_sleep_btn)
-        # Neutral placeholder now; the real state (which may load the model to
-        # check readiness) is resolved lazily the first time the drawer opens.
-        self._wake_btn.setText("🎙  WAKE WORD")
-        self._wake_btn.setStyleSheet(_BTN_STYLE_DIM)
         self._wake_sleep_btn.hide()
 
-        audio_btn = QPushButton("🎧  AUDIO DEVICES")
-        audio_btn.setFixedHeight(26)
-        audio_btn.setFont(QFont("Courier New", 7))
-        audio_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        audio_btn.setStyleSheet(_BTN_STYLE_DIM)
+        audio_btn = _drawer_btn("AUDIO DEVICES", "voice", _BTN_STYLE_DIM)
         audio_btn.clicked.connect(self._open_audio_devices)
         lay.addWidget(audio_btn)
 
-        mem_btn = QPushButton("🧠  MEMORY")
-        mem_btn.setFixedHeight(26)
-        mem_btn.setFont(QFont("Courier New", 7))
-        mem_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        mem_btn.setStyleSheet(_BTN_STYLE_DIM)
+        mem_btn = _drawer_btn("MEMORY", "memory", _BTN_STYLE_DIM)
         mem_btn.clicked.connect(self._open_memory_panel)
         lay.addWidget(mem_btn)
 
-        plugin_btn = QPushButton("🧩  PLUGINS")
-        plugin_btn.setFixedHeight(26)
-        plugin_btn.setFont(QFont("Courier New", 7))
-        plugin_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        plugin_btn.setStyleSheet(_BTN_STYLE_DIM)
+        plugin_btn = _drawer_btn("PLUGINS", "code", _BTN_STYLE_DIM)
         plugin_btn.clicked.connect(self._open_plugin_manager)
         lay.addWidget(plugin_btn)
 
-        settings_btn = QPushButton("⚙  PLUGIN SETTINGS")
-        settings_btn.setFixedHeight(26)
-        settings_btn.setFont(QFont("Courier New", 7))
-        settings_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        settings_btn.setStyleSheet(_BTN_STYLE_DIM)
+        settings_btn = _drawer_btn("PLUGIN SETTINGS", "settings", _BTN_STYLE_DIM)
         settings_btn.clicked.connect(self._open_plugin_settings)
         lay.addWidget(settings_btn)
 
@@ -4668,15 +5104,29 @@ class MainWindow(QMainWindow):
 
     def _build_footer(self) -> QWidget:
         w = QWidget()
-        w.setFixedHeight(22)
+        w.setFixedHeight(34)
         w.setStyleSheet(f"background: {C.DARK}; border-top: 1px solid {C.BORDER};")
         lay = QHBoxLayout(w); lay.setContentsMargins(14, 0, 14, 0)
+        lay.setSpacing(10)
 
         def _fl(txt, color=C.TEXT_MED):
             l = QLabel(txt); l.setFont(QFont("Courier New", 7))
             l.setStyleSheet(f"color: {color}; background: transparent;")
             return l
 
+        # ── NEWS panel icon (from mj.png) ─────────────────────────────────────
+        _news_px = IconManager.get_pixmap("news", 16)
+        news_icon = QLabel()
+        if _news_px and not _news_px.isNull():
+            news_icon.setPixmap(_news_px)
+        news_icon.setFixedSize(16, 16)
+        lay.addWidget(news_icon)
+
+        self._footer_news = QLabel("NEWS FEED ▸ No new updates")
+        self._footer_news.setFont(QFont("Courier New", 7))
+        self._footer_news.setStyleSheet(f"color: {C.TEXT_MED}; background: transparent;")
+        lay.addWidget(self._footer_news)
+        lay.addStretch()
         lay.addWidget(_fl("[F4] Mute  ·  [F11] Fullscreen"))
         lay.addStretch()
         lay.addWidget(_fl("By Vishal Soni", C.PRI_DIM))
@@ -4699,7 +5149,22 @@ class MainWindow(QMainWindow):
             )
             threading.Thread(target=self.on_text_command, args=(msg,), daemon=True).start()
 
+    def _on_file_cleared(self) -> None:
+        """The ✕ on the drop zone was pressed — forget the loaded file.
+
+        MainWindow._current_file is the single source of truth the asyncio
+        thread reads (via JarvisUI.current_file), so it has to be cleared here
+        and not only inside the widget."""
+        self._current_file = None
+        self._file_hint.setText("No file loaded — drop or click above to upload")
+
     def notify_phone_connected(self) -> None:
+        """Thread-safe. The dashboard calls this from the asyncio thread; the
+        overlay it updates is a widget, so the work is queued to the Qt thread."""
+        self._phone_conn_sig.emit()
+
+    def _apply_phone_connected(self) -> None:
+        """Slot — runs on the Qt main thread."""
         if self._remote_overlay and self._remote_overlay.isVisible():
             self._remote_overlay.mark_connected()
 
@@ -4817,20 +5282,22 @@ class MainWindow(QMainWindow):
         if not hasattr(self, '_autostart_btn'):
             return
         if enabled:
-            self._autostart_btn.setText("◉  AUTO-START: ON")
+            self._autostart_btn.setText("  AUTO-START: ON")
             self._autostart_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: #001a08; color: {C.GREEN};
                     border: 1px solid {C.GREEN_D}; border-radius: 3px;
+                    text-align: left; padding: 0 8px;
                 }}
                 QPushButton:hover {{ background: #002010; }}
             """)
         else:
-            self._autostart_btn.setText("◉  AUTO-START: OFF")
+            self._autostart_btn.setText("  AUTO-START: OFF")
             self._autostart_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent; color: {C.TEXT_DIM};
                     border: 1px solid {C.BORDER}; border-radius: 3px;
+                    text-align: left; padding: 0 8px;
                 }}
                 QPushButton:hover {{ color: {C.TEXT}; border: 1px solid {C.BORDER_B}; }}
             """)
@@ -4881,17 +5348,17 @@ class MainWindow(QMainWindow):
             QPushButton:hover {{ color: {C.TEXT}; border: 1px solid {C.BORDER_B}; }}"""
         self._wake_btn.setEnabled(True)
         if not st["ready"]:
-            self._wake_btn.setText("⬇  WAKE WORD: DOWNLOAD")
+            self._wake_btn.setText("  WAKE WORD: DOWNLOAD")
             self._wake_btn.setStyleSheet(_off)
             self._wake_sleep_btn.hide()
         elif st["enabled"]:
-            self._wake_btn.setText("🎙  WAKE WORD: ON")
+            self._wake_btn.setText("  WAKE WORD: ON")
             self._wake_btn.setStyleSheet(_on)
             self._wake_sleep_btn.show()
-            self._wake_sleep_btn.setText("😴  SLEEP NOW" if st["awake"] else "👂  WAKE NOW")
+            self._wake_sleep_btn.setText("  SLEEP NOW" if st["awake"] else "  WAKE NOW")
             self._wake_sleep_btn.setStyleSheet(_off)
         else:
-            self._wake_btn.setText("🎙  WAKE WORD: OFF")
+            self._wake_btn.setText("  WAKE WORD: OFF")
             self._wake_btn.setStyleSheet(_off)
             self._wake_sleep_btn.hide()
 
@@ -4899,7 +5366,7 @@ class MainWindow(QMainWindow):
         st = self._wake_state()
         if not st["ready"]:
             # First time: download openwakeword + model in a worker thread.
-            self._wake_btn.setText("⬇  DOWNLOADING… (one-time)")
+            self._wake_btn.setText("  DOWNLOADING… (one-time)")
             self._wake_btn.setEnabled(False)
             def _work():
                 try:
@@ -4940,7 +5407,7 @@ class MainWindow(QMainWindow):
         if not hasattr(self, '_brief_btn'):
             return
         if enabled:
-            self._brief_btn.setText("☀  MORNING BRIEF: ON")
+            self._brief_btn.setText("  MORNING BRIEF: ON")
             self._brief_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: #001a08; color: {C.GREEN};
@@ -4950,7 +5417,7 @@ class MainWindow(QMainWindow):
                 QPushButton:hover {{ background: #002010; }}
             """)
         else:
-            self._brief_btn.setText("☀  MORNING BRIEF: OFF")
+            self._brief_btn.setText("  MORNING BRIEF: OFF")
             self._brief_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent; color: {C.TEXT_DIM};
@@ -5152,6 +5619,29 @@ class MainWindow(QMainWindow):
         self._clipboard_panel.setGeometry(x, y, pw, ph)
         self._clipboard_panel.raise_()
 
+    def _position_tutor_overlay(self):
+        """Position English Tutor overlay below HUD, centered."""
+        cw = self.centralWidget()
+        pw = EnglishTutorOverlay._W
+        ph = EnglishTutorOverlay._H
+        x = (cw.width() - pw) // 2
+        # Place below the HUD area (center panel top portion)
+        split = self._center_split
+        if split and split.isVisible():
+            y = split.y() + 12
+        else:
+            y = 60
+        # Clamp so it doesn't exceed the panel
+        max_y = cw.height() - ph - 4
+        y = min(y, max_y)
+        self._tutor_overlay.setGeometry(x, y, pw, ph)
+        self._tutor_overlay.raise_()
+
+    @property
+    def tutor_overlay(self) -> EnglishTutorOverlay:
+        """Public access to the tutor overlay for direct window integrations."""
+        return self._tutor_overlay
+
     def _on_clipboard_action(self, cmd: str):
         if self.on_text_command:
             threading.Thread(target=self.on_text_command, args=(cmd,), daemon=True).start()
@@ -5175,7 +5665,7 @@ class MainWindow(QMainWindow):
 
     def _style_mute_btn(self):
         if self._muted:
-            self._mute_btn.setText("🔇  MICROPHONE MUTED")
+            self._mute_btn.setText("  MICROPHONE MUTED")
             self._mute_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: #140006; color: {C.MUTED_C};
@@ -5183,7 +5673,7 @@ class MainWindow(QMainWindow):
                 }}
             """)
         else:
-            self._mute_btn.setText("🎙  MICROPHONE ACTIVE")
+            self._mute_btn.setText("  MICROPHONE ACTIVE")
             self._mute_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: #00140a; color: {C.GREEN};
@@ -5268,7 +5758,10 @@ class JarvisUI:
 
     @property
     def current_file(self) -> str | None:
-        return self._win._drop_zone.current_file()
+        # A plain attribute read on the window — NOT a call into the widget.
+        # This is read from the asyncio thread while a tool runs, and QWidget
+        # methods must never be entered from another thread.
+        return self._win._current_file
 
     @property
     def on_text_command(self):
@@ -5412,3 +5905,17 @@ class JarvisUI:
     def stop_speaking(self):
         if not self.muted:
             self.set_state("LISTENING")
+
+    # ── English Tutor ────────────────────────────────────────────────────────
+
+    @property
+    def tutor_overlay(self):
+        return self._win._tutor_overlay
+
+    @property
+    def tutor_active(self) -> bool:
+        return getattr(self._win, '_tutor_active', False)
+
+    @tutor_active.setter
+    def tutor_active(self, v: bool):
+        self._win._tutor_active = v

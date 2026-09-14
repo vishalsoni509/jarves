@@ -68,6 +68,10 @@ from actions.background_monitor import (
     add_monitor, remove_monitor, list_monitors, check_all as monitor_check_all,
 )
 from actions.web_search        import _news as _fetch_news_sync
+from actions.english_tutor     import (
+    EnglishTutorSession, tutor_recorder, _load_tutor_memory,
+    _save_tutor_memory,
+)
 from memory.config_manager     import (
     get_brief_enabled, get_voice, get_wake_word_enabled, save_wake_word_enabled, get_input_device, get_output_device,
     get_persona_instruction, get_persona, get_voice_gender, get_assistant_name,
@@ -420,6 +424,11 @@ class JarvisLive:
         self._session_log: list[str] = []          # conversation turns for end-of-session summary
         self._energy_tracker = _DynamicEnergyTracker()
 
+        # ── English Tutor ──────────────────────────────────────────────────
+        self._tutor_session: EnglishTutorSession | None = None
+        self._tutor_recording = False
+        self._tutor_last_turn_time = 0.0
+
         self._enhanced_live = True  # proactive audio; auto-disabled if the server rejects it
 
         _base_dir = Path(__file__).resolve().parent
@@ -638,6 +647,23 @@ class JarvisLive:
     def _on_text_command(self, text: str):
         if not self._loop or not self.session:
             return
+        # English Tutor control commands (from UI overlay buttons)
+        _t = (text or "").strip().upper()
+        if _t.startswith("START_PRACTICE"):
+            self._tutor_practice()
+            return
+        if _t.startswith("START_SHADOWING"):
+            self._tutor_shadowing()
+            return
+        if _t.startswith("START_DAILY_COACH"):
+            self._tutor_daily()
+            return
+        if _t.startswith("HEAR_WORD"):
+            self._tutor_hear_word()
+            return
+        if "START ENGLISH TUTOR SESSION" in _t or "START ENGLISH TUTOR" in _t:
+            self._tutor_start()
+            return
         # Respect wake-word sleep: a typed command must not be answered while
         # asleep either (the sleep gate is not just for the mic). Wake first with
         # "Hey Jarvis" or the WAKE NOW button.
@@ -660,6 +686,196 @@ class JarvisLive:
         elif not self.ui.muted:
             self.ui.set_state("LISTENING")
 
+    # ── English Tutor control (invoked from UI overlay) ─────────────────────
+
+    def _tutor_start(self):
+        """Begin a tutor session: ask an opening question and show LISTENING."""
+        if self._tutor_session is None:
+            self._tutor_session = EnglishTutorSession(
+                on_state_change=self._tutor_on_state
+            )
+        r = self._tutor_session.start_session()
+        q = r["question"]
+        self.ui.tutor_overlay.set_question(q, r["topic"])
+        self.ui.tutor_active = True
+        self.ui.write_log("SYS: English Tutor started — Speaking Mentor active.")
+        # Tell JARVIS to ask the opening question out loud
+        self.speak(
+            "You are now the English Speaking Mentor. "
+            f"Greet the student briefly and ask them this opening question: {q}"
+        )
+        # Arm the recorder: capture the full spoken response
+        self._tutor_arm_recorder()
+
+    def _tutor_arm_recorder(self):
+        """Start buffering mic audio for pronunciation analysis."""
+        self._tutor_recording = True
+        tutor_recorder.start()
+        self.ui.tutor_overlay.set_state("LISTENING")
+
+    def _tutor_stop_recorder(self):
+        """Stop buffering; returns (audio, duration)."""
+        if not tutor_recorder.is_recording:
+            return None
+        audio, dur = tutor_recorder.stop()
+        self._tutor_recording = False
+        return (audio, dur)
+
+    def _tutor_on_final_transcript(self, transcript: str):
+        """Called when JARVIS receives the user's full spoken answer
+        (from Live input transcription) while tutor mode is active."""
+        if not self.ui.tutor_active or not self._tutor_session:
+            return
+        if not transcript or len(transcript.strip()) < 3:
+            return
+        # Stop recording and analyze
+        rec = self._tutor_stop_recorder()
+        audio = rec[0] if rec else None
+        duration = rec[1] if rec else 0.0
+        self.ui.tutor_overlay.set_state("ANALYZING")
+        self.ui.write_log("TUTOR: Analyzing response...")
+
+        import asyncio as _aio
+        loop = getattr(self, "_loop", None)
+        if loop:
+            _aio.run_coroutine_threadsafe(
+                self._tutor_analyze_and_report(transcript, audio, duration),
+                loop,
+            )
+
+    async def _tutor_analyze_and_report(self, transcript: str, audio, duration: float):
+        """Run analysis (off-thread) and push results to the UI + JARVIS speech."""
+        def _work():
+            return self._tutor_session.receive_speech(
+                transcript, audio=audio, duration=duration,
+            )
+        try:
+            report = await asyncio.to_thread(_work)
+        except Exception as e:
+            print(f"[Tutor] Analysis error: {e}")
+            self.ui.write_log(f"TUTOR: Analysis error — {e}")
+            return
+
+        # Show report in overlay
+        self.ui.tutor_overlay.set_state("FEEDBACK")
+        self.ui.tutor_overlay.show_feedback(report)
+        self.ui.tutor_overlay.set_state("IDLE")
+
+        # Log to activity
+        s = report.get("scores", {})
+        self.ui.write_log(
+            "TUTOR: G %s  V %s  F %s%s  O %s" % (
+                s.get("grammar", "–"), s.get("vocabulary", "–"),
+                s.get("fluency", "–"),
+                (f"  P {s.get('pronunciation', '–')}" if s.get("pronunciation") else "  P unavailable"),
+                s.get("overall", "–"),
+            )
+        )
+
+        # JARVIS speaks concise feedback + a follow-up
+        fb = self._tutor_feedback_speech(report)
+        self.speak(fb)
+
+        # Arm recorder for the next answer
+        self._tutor_arm_recorder()
+
+    def _tutor_feedback_speech(self, report: dict) -> str:
+        """Compose a concise spoken feedback prompt for JARVIS."""
+        s = report.get("scores", {})
+        lines = [
+            "You are the English Speaking Mentor. Give the student concise spoken feedback:",
+            f"Grammar {s.get('grammar', '–')}/10, Vocabulary {s.get('vocabulary', '–')}/10, "
+            f"Fluency {s.get('fluency', '–')}/10"
+        ]
+        p = report.get("pronunciation", {})
+        if p.get("available") and p.get("score"):
+            lines.append(f"Pronunciation {p.get('score')}/10.")
+        else:
+            lines.append("Pronunciation analysis unavailable for this response.")
+        oc = report.get("overall_feedback", "")
+        if oc:
+            lines.append(f"Overall: {oc}")
+        # Grammar fix suggestion
+        gi = report.get("grammar_issues", [])
+        if gi:
+            g = gi[0]
+            lines.append(
+                f"One grammar tip: {g.get('issue', '')} — say '{g.get('correction', '')}' instead."
+            )
+        # Pronunciation practice word
+        pw = report.get("practice_words", [])
+        if pw:
+            lines.append(f"Practice pronouncing the word '{pw[0]}'.")
+        # Next question
+        nq = self._tutor_session.next_question().get("question", "")
+        lines.append(
+            "Then ask the student the next question naturally: " + nq
+        )
+        return "\n".join(lines)
+
+    def _tutor_on_state(self, state: str):
+        try:
+            self.ui.tutor_overlay.set_state(state)
+        except Exception:
+            pass
+
+    def _tutor_practice(self):
+        """Pronunciation practice mode — target a single word."""
+        if self._tutor_session is None:
+            self._tutor_session = EnglishTutorSession()
+        r = self._tutor_session.start_practice()
+        word = r["word"]
+        self.ui.tutor_overlay.set_question(
+            f'Repeat after me: "{word}".', "PRONUNCIATION PRACTICE"
+        )
+        self.ui.tutor_overlay.set_hearing(word)
+        self.ui.write_log(f"TUTOR: Practice word — {word}")
+        self.speak(
+            "Pronunciation practice. Repeat after me: "
+            f"'{word}'. When you are ready, say the word clearly."
+        )
+        self._tutor_arm_recorder()
+
+    def _tutor_shadowing(self):
+        """Sentence shadowing mode."""
+        if self._tutor_session is None:
+            self._tutor_session = EnglishTutorSession()
+        r = self._tutor_session.start_shadowing()
+        sent = r["sentence"]
+        self.ui.tutor_overlay.set_question(
+            f'Repeat the sentence: "{sent}"', "SENTENCE SHADOWING"
+        )
+        self.ui.tutor_overlay.set_state("SHADOWING")
+        self.ui.write_log("TUTOR: Shadowing started.")
+        self.speak(
+            "Sentence shadowing. Listen carefully, then repeat: "
+            f"'{sent}'. Now, your turn."
+        )
+        self._tutor_arm_recorder()
+
+    def _tutor_daily(self):
+        """Daily English Coach session."""
+        if self._tutor_session is None:
+            self._tutor_session = EnglishTutorSession()
+        r = self._tutor_session.start_daily_coach()
+        q = r["question"]
+        self.ui.tutor_overlay.set_question(q, "DAILY ENGLISH COACH")
+        self.ui.tutor_overlay.set_state("DAILY_COACH")
+        self.ui.write_log("TUTOR: Daily English Coach started.")
+        self.speak(
+            "Starting your Daily English Coach session. Warm-up question: "
+            f"'{q}'. Take your time and answer."
+        )
+        self._tutor_arm_recorder()
+
+    def _tutor_hear_word(self):
+        """Re-play the current practice word out loud."""
+        if not self._tutor_session:
+            return
+        word = self._tutor_session._practice_word
+        if word:
+            self.speak(f"Listen carefully and repeat: '{word}'.")
+
     def interrupt(self) -> None:
         """Stop JARVIS mid-speech: drain queued audio and open mic immediately."""
         self._interrupted = True
@@ -674,6 +890,9 @@ class JarvisLive:
                     break
             if drained:
                 print(f"[JARVIS] ✋ Interrupted — {drained} audio chunks discarded")
+        # Stop tutor recorder if active
+        if self._tutor_recording:
+            self._tutor_stop_recorder()
         self.set_speaking(False)
         if self._turn_done_event:
             self._turn_done_event.clear()
@@ -971,6 +1190,12 @@ class JarvisLive:
                     self.out_queue.put_nowait,
                     {"data": data, "mime_type": "audio/pcm"}
                 )
+                # Feed audio to English Tutor recorder when active
+                if self.ui.tutor_active and tutor_recorder.is_recording:
+                    try:
+                        tutor_recorder.feed(indata)
+                    except Exception:
+                        pass
                 # Dynamic noise floor estimation ensures loud ad audio does not clip HUD or drop speech
                 current_floor = self._energy_tracker.update(indata)
                 try:
@@ -1084,6 +1309,9 @@ class JarvisLive:
                             if full_in:
                                 self.ui.write_log(f"You: {full_in}")
                                 self._session_log.append(f"User: {full_in}")
+                                # English Tutor: analyze the student's spoken answer
+                                if self.ui.tutor_active and self._tutor_session:
+                                    self._tutor_on_final_transcript(full_in)
                                 if self._dashboard:
                                     asyncio.create_task(self._dashboard.broadcast({
                                         "type": "log", "speaker": "user",

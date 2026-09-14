@@ -1,0 +1,88 @@
+{
+  "sessions": [
+    {
+      "date": "2026-09-14",
+      "rounds": 1,
+      "duration_seconds": 3,
+      "avg_scores": {
+        "grammar": 5.0,
+        "vocabulary": 5.0,
+        "fluency": 7.0,
+        "pronunciation": 0.0,
+        "overall": 5.7
+      }
+    }
+  ],
+  "total_sessions": 1,
+  "grammar_errors": {},
+  "pronunciation_issues": {},
+  "repeated_words": {
+    "the": 4
+  },
+  "filler_words": {
+    "um": 3,
+    "so": 1
+  },
+  "vocabulary_learned": [],
+  "speaking_speeds": [
+    95,
+    63,
+    42,
+    25,
+    16,
+    15
+  ],
+  "scores": [
+    {
+      "grammar": 5,
+      "vocabulary": 5,
+      "fluency": 7,
+      "pronunciation": 0,
+      "overall": 5.7
+    },
+    {
+      "grammar": 5,
+      "vocabulary": 5,
+      "fluency": 7,
+      "pronunciation": 0,
+      "overall": 5.7
+    },
+    {
+      "grammar": 5,
+      "vocabulary": 5,
+      "fluency": 8,
+      "pronunciation": 0,
+      "overall": 6.0
+    },
+    {
+      "grammar": 5,
+      "vocabulary": 5,
+      "fluency": 7,
+      "pronunciation": 0,
+      "overall": 5.7
+    },
+    {
+      "grammar": 5,
+      "vocabulary": 5,
+      "fluency": 7,
+      "pronunciation": 0,
+      "overall": 5.7
+    },
+    {
+      "grammar": 5,
+      "vocabulary": 5,
+      "fluency": 8,
+      "pronunciation": 0,
+      "overall": 6.0
+    },
+    {
+      "grammar": 5,
+      "vocabulary": 5,
+      "fluency": 8,
+      "pronunciation": 0,
+      "overall": 6.0
+    }
+  ],
+  "common_grammar_errors": [],
+  "common_pronunciation_issues": []
+}
