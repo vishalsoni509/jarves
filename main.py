@@ -70,7 +70,7 @@ from actions.background_monitor import (
 from actions.web_search        import _news as _fetch_news_sync
 from memory.config_manager     import (
     get_brief_enabled, get_voice, get_wake_word_enabled, save_wake_word_enabled, get_input_device, get_output_device,
-    get_persona_instruction, get_persona, get_voice_gender,
+    get_persona_instruction, get_persona, get_voice_gender, get_assistant_name,
 )
 from core.plugin_loader        import discover_plugins
 from core                      import undo as undo_stack
@@ -394,6 +394,7 @@ class JarvisLive:
         self.ui.on_audio_device_change = self._on_audio_device_change
         self._reconnect_event: asyncio.Event | None = None
         self._reconnect_keep = True   # False → next rebuild drops the resumption handle
+        self._post_reconnect_prompt: str | None = None
 
         # ── Session resumption ─────────────────────────────────────────
         # The server issues a resumption handle every few seconds and reissues
@@ -570,7 +571,7 @@ class JarvisLive:
         except Exception as e:
             print(f"[PluginSay] {e}")
 
-    def request_reconnect(self, keep_context: bool = True, reason: str = ""):
+    def request_reconnect(self, keep_context: bool = True, reason: str = "", greeting: str = ""):
         """Thread-safe: ask the run loop to tear down and rebuild the Live
         session. Called from the Qt thread. No-op until the async loop and
         reconnect event exist.
@@ -582,6 +583,8 @@ class JarvisLive:
         ev   = self._reconnect_event
         self._reconnect_keep   = keep_context
         self._reconnect_reason = reason
+        if greeting:
+            self._post_reconnect_prompt = greeting
         if loop and ev is not None:
             loop.call_soon_threadsafe(ev.set)
 
@@ -594,7 +597,9 @@ class JarvisLive:
         is that it restores the voice with it — which would make the picker
         appear to do nothing. Losing context here is acceptable because changing
         voice is a deliberate, rare act; losing it on a dropped packet was not."""
-        self.request_reconnect(keep_context=False, reason="new voice")
+        v = get_voice()
+        greeting = f"Say a short, cheerful sentence in your new voice ({v}) letting the user know you are ready."
+        self.request_reconnect(keep_context=False, reason="new voice", greeting=greeting)
 
     def _on_audio_device_change(self):
         """Microphone or speaker changed. Both streams are opened inside the
@@ -694,12 +699,11 @@ class JarvisLive:
         from datetime import datetime
 
         # Load customization from config
+        self._asst_name = get_assistant_name()
         try:
             _cfg = json.loads(open(API_CONFIG_PATH, encoding="utf-8").read())
-            self._asst_name = (_cfg.get("assistant_name") or "JARVIS").strip()
             _user_name = (_cfg.get("user_name") or "").strip()
         except Exception:
-            self._asst_name = "JARVIS"
             _user_name = ""
 
         memory     = load_memory()
@@ -1645,10 +1649,28 @@ class JarvisLive:
                     if self._dashboard:
                         tg.create_task(self._relay_phone_audio())
 
+                    # Immediate confirmation greeting on voice/persona mode switch
+                    if getattr(self, "_post_reconnect_prompt", None) and self._awake:
+                        prompt_to_send = self._post_reconnect_prompt
+                        self._post_reconnect_prompt = None
+
+                        async def _send_reconnect_greeting(p_text: str):
+                            await asyncio.sleep(0.3)
+                            if self.session:
+                                try:
+                                    await self.session.send_client_content(
+                                        turns={"role": "user", "parts": [{"text": p_text}]},
+                                        turn_complete=True,
+                                    )
+                                except Exception as ge:
+                                    print(f"[JARVIS] Reconnect greeting error: {ge}")
+
+                        tg.create_task(_send_reconnect_greeting(prompt_to_send))
+
                     # Morning briefing — fires once per process launch (if enabled).
                     # Skipped in wake-word mode: it comes up asleep, and a briefing
                     # would mean talking while "asleep".
-                    if not self._briefing_sent and get_brief_enabled() and self._awake:
+                    elif not self._briefing_sent and get_brief_enabled() and self._awake:
                         self._briefing_sent = True
                         tg.create_task(self._send_startup_briefing())
 

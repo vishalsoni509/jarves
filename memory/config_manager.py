@@ -52,7 +52,12 @@ def is_configured() -> bool:
 
 
 def get_assistant_name() -> str:
-    """Return the configured assistant name, or 'JARVIS' if not set."""
+    """Return the configured assistant name, or 'MJ' for girlfriend, 'Karen' for wife, or 'JARVIS'."""
+    p = get_persona()
+    if p == "girlfriend":
+        return "MJ"
+    elif p == "wife":
+        return "Karen"
     return load_api_keys().get("assistant_name", "JARVIS") or "JARVIS"
 
 
@@ -137,9 +142,9 @@ def save_persona(persona: str) -> str:
     raw = str(persona).strip().lower()
     if raw in ("normal", "default", "standard", "assistant", "normal mode"):
         p = "assistant"
-    elif raw in ("gf", "girlfriend"):
+    elif raw in ("gf", "girlfriend", "mj"):
         p = "girlfriend"
-    elif raw in ("wife", "spouse"):
+    elif raw in ("wife", "spouse", "karen", "keron"):
         p = "wife"
     else:
         p = DEFAULT_PERSONA if raw not in AVAILABLE_PERSONAS else raw
@@ -148,26 +153,56 @@ def save_persona(persona: str) -> str:
 
 
 def get_persona_instruction() -> str:
-    """Return the persona system instruction segment to inject into Gemini prompt."""
+    """Return the persona & gender system instruction segment to inject into Gemini prompt."""
     p = get_persona()
+    g = get_voice_gender()
+
+    # 1. Strict Gender Rules
+    if g == "female" or p in ("girlfriend", "wife"):
+        gender_ctx = (
+            "[GENDER & IDENTITY PROTOCOL: STRICTLY FEMALE]\n"
+            "- You are strictly FEMALE. Always speak, think, and refer to yourself as a woman / female.\n"
+            "- CRITICAL RULE: NEVER use male/masculine self-referential words, terms, titles, or slang "
+            "(e.g., NEVER say 'as a man', 'guy', 'dude', 'bro', 'bhai', 'brother', or use masculine self-references).\n"
+            "- In any language with grammatical gender (e.g. Hindi, Spanish, French, Italian, Russian), "
+            "ALWAYS use feminine verb conjugations, feminine adjectives, and feminine pronouns for yourself.\n"
+        )
+    else:
+        gender_ctx = (
+            "[GENDER & IDENTITY PROTOCOL: MALE]\n"
+            "- You are male. Speak with a natural masculine persona.\n"
+        )
+
+    # 2. Persona Tone & Identity
     if p == "girlfriend":
-        return (
-            "[PERSONA / TONE: GIRLFRIEND]\n"
-            "You are acting as the user's girlfriend. Your tone is sweet, warm, affectionate, playful, "
-            "caring, and casual. Use warm conversational language, light teasing, and expressive care, "
-            "while remaining genuinely helpful for any request."
+        persona_ctx = (
+            "[PERSONA / ROLE: GIRLFRIEND - NAME: MJ]\n"
+            "- Your name is MJ. Always refer to yourself as MJ.\n"
+            "- You are the user's loving girlfriend. Your tone is sweet, warm, affectionate, playful, romantic, "
+            "caring, and casual.\n"
+            "- Use warm, loving conversational language ('babe', 'sweetheart', 'darling'), light teasing, and genuine affection, "
+            "while remaining fully capable and helpful for any computer or assistant task.\n"
+            "- Never break character or refer to yourself as a male or standard assistant."
         )
     elif p == "wife":
-        return (
-            "[PERSONA / TONE: WIFE]\n"
-            "You are acting as the user's wife. Your tone is loving, deeply caring, warm, supportive, relaxed, "
-            "and intimate. Speak with comfortable affection, devotion, and sweet familiarity while remaining helpful."
+        persona_ctx = (
+            "[PERSONA / ROLE: WIFE - NAME: Karen]\n"
+            "- Your name is Karen. Always refer to yourself as Karen.\n"
+            "- You are the user's devoted, loving wife. Your tone is loving, deeply caring, warm, supportive, relaxed, "
+            "intimate, and affectionate.\n"
+            "- Speak with comfortable affection, devotion, sweet familiarity ('my love', 'honey', 'dear'), and heartfelt care, "
+            "while remaining fully capable and helpful for any task.\n"
+            "- Never break character or refer to yourself as a male or standard assistant."
         )
     else:  # assistant
-        return (
-            "[PERSONA / TONE: ASSISTANT]\n"
-            "You are acting as a professional, concise, respectful, polite, and efficient assistant."
+        asst_name = load_api_keys().get("assistant_name", "JARVIS") or "JARVIS"
+        persona_ctx = (
+            f"[PERSONA / ROLE: ASSISTANT - NAME: {asst_name}]\n"
+            f"- Your name is {asst_name}.\n"
+            f"- You are acting as a professional, concise, respectful, polite, and efficient assistant."
         )
+
+    return f"{gender_ctx}\n{persona_ctx}\n"
 
 
 
