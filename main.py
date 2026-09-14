@@ -105,7 +105,26 @@ _LEVEL_FLOOR = 60.0
 _LEVEL_FULL  = 2600.0
 
 
-def _pcm_level(samples) -> float:
+class _DynamicEnergyTracker:
+    """Dynamic energy threshold tracking for noise floor adaptation during loud playback."""
+    def __init__(self, initial_threshold: float = 60.0, alpha: float = 0.05):
+        self.noise_floor = initial_threshold
+        self.alpha = alpha
+
+    def update(self, samples) -> float:
+        try:
+            x = np.asarray(samples, dtype=np.float32)
+            if x.size == 0:
+                return self.noise_floor
+            rms = float(np.sqrt(np.mean(x * x)))
+            if rms < self.noise_floor * 2.5:
+                self.noise_floor = (1 - self.alpha) * self.noise_floor + self.alpha * rms
+        except Exception:
+            pass
+        return max(30.0, self.noise_floor)
+
+
+def _pcm_level(samples, dynamic_floor: float = _LEVEL_FLOOR) -> float:
     """Map a block of int16 PCM samples to a 0.0–1.0 loudness level for the HUD
     waveform. Returns 0.0 on empty/invalid input so it can never raise."""
     try:
@@ -115,9 +134,10 @@ def _pcm_level(samples) -> float:
         rms = float(np.sqrt(np.mean(x * x)))
     except Exception:
         return 0.0
-    if rms <= _LEVEL_FLOOR:
+    floor = max(_LEVEL_FLOOR, dynamic_floor)
+    if rms <= floor:
         return 0.0
-    return min(1.0, (rms - _LEVEL_FLOOR) / (_LEVEL_FULL - _LEVEL_FLOOR))
+    return min(1.0, (rms - floor) / (_LEVEL_FULL - floor))
 
 
 def _get_api_key() -> str:
@@ -396,6 +416,7 @@ class JarvisLive:
         self._proactive        = ProactiveEngine()
         self._last_user_speech = time.monotonic()  # updated on every user utterance
         self._session_log: list[str] = []          # conversation turns for end-of-session summary
+        self._energy_tracker = _DynamicEnergyTracker()
 
         self._enhanced_live = True  # proactive audio; auto-disabled if the server rejects it
 
@@ -943,11 +964,10 @@ class JarvisLive:
                     self.out_queue.put_nowait,
                     {"data": data, "mime_type": "audio/pcm"}
                 )
-                # Feed the live mic level to the HUD so the waveform reacts to
-                # the user's actual voice while listening. Purely cosmetic — any
-                # failure here must never disturb the mic.
+                # Dynamic noise floor estimation ensures loud ad audio does not clip HUD or drop speech
+                current_floor = self._energy_tracker.update(indata)
                 try:
-                    self.ui.set_audio_level(_pcm_level(indata))
+                    self.ui.set_audio_level(_pcm_level(indata, dynamic_floor=current_floor))
                 except Exception:
                     pass
 

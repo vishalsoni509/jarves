@@ -16,6 +16,12 @@ except ImportError:
     _PYAUTOGUI = False
 
 try:
+    import pygetwindow as gw
+    _PYGETWINDOW = True
+except ImportError:
+    _PYGETWINDOW = False
+
+try:
     import numpy as np
     _NUMPY = True
 except ImportError:
@@ -56,6 +62,11 @@ HEADERS = {
 
 _YT_VIDEO_FILTER = "EgIQAQ%3D%3D"
 
+# Module-level handle for the browser process Jarvis opens.
+# Stored so that the 'close' action can terminate only *this* process
+# (not every Chrome/Edge window on the system).
+_browser_proc: "subprocess.Popen | None" = None
+
 
 def _get_api_key() -> str:
     with open(API_CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -63,13 +74,28 @@ def _get_api_key() -> str:
 
 
 def _open_url(url: str) -> None:
+    """Opens *url* in the OS default browser and stores the process handle."""
+    global _browser_proc
     try:
         if is_mac():
-            subprocess.Popen(["open", url])
+            _browser_proc = subprocess.Popen(["open", url])
         elif is_linux():
-            subprocess.Popen(["xdg-open", url])
+            _browser_proc = subprocess.Popen(["xdg-open", url])
         else:
-            subprocess.Popen(["cmd", "/c", "start", "", url], shell=False)
+            # On Windows, 'start' is a shell built-in; we use cmd /c start.
+            # This spawns a short-lived cmd.exe whose job is just to hand off
+            # the URL to the default browser — the *actual* browser process is
+            # a child of that cmd.exe, not of _browser_proc itself.
+            # We store the cmd.exe handle so we can at least get its PID tree
+            # for cleanup; the fallback strategy handles the browser window.
+            _browser_proc = subprocess.Popen(
+                ["cmd", "/c", "start", "", url],
+                shell=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        print(f"[YouTube] 📎 Stored browser proc PID: "
+              f"{_browser_proc.pid if _browser_proc else 'n/a'}")
     except Exception as e:
         print(f"[YouTube] ⚠️ open_url failed: {e}")
 
@@ -399,11 +425,228 @@ def _handle_trending(parameters: dict, player, speak) -> str:
 
     return result
 
+# ── Fullscreen helpers ───────────────────────────────────────────────────────
+_BROWSER_WINDOW_KEYWORDS = (
+    "youtube", "google chrome", "microsoft edge", "firefox",
+    "opera", "brave", "vivaldi",
+)
+
+
+def _focus_browser_window() -> bool:
+    """
+    Attempts to bring a browser window that contains a known keyword to the
+    foreground so that a subsequent keypress lands in the right window.
+    Returns True if a window was successfully focused, False otherwise.
+    """
+    if not _PYGETWINDOW:
+        print("[YouTube] ⚠️ pygetwindow not available — cannot focus browser window")
+        return False
+
+    try:
+        all_windows = gw.getAllWindows()
+    except Exception as e:
+        print(f"[YouTube] ⚠️ pygetwindow.getAllWindows() failed: {e}")
+        return False
+
+    # Prefer a window whose title includes "YouTube" first, then any browser
+    for priority_kw in ("youtube", *_BROWSER_WINDOW_KEYWORDS[1:]):
+        for win in all_windows:
+            try:
+                title = (win.title or "").lower()
+                if priority_kw in title and win.visible and win.width > 100:
+                    win.activate()
+                    import time as _time
+                    _time.sleep(0.3)   # give the OS time to actually focus
+                    print(f"[YouTube] 🖥️  Focused window: '{win.title}'")
+                    return True
+            except Exception:
+                continue
+
+    print("[YouTube] ⚠️ No suitable browser window found to focus")
+    return False
+
+
+def _handle_fullscreen(parameters: dict, player) -> str:
+    """
+    Toggles YouTube fullscreen by pressing 'f'.
+    YouTube's HTML5 player uses the F key (not F11) to toggle fullscreen.
+    We focus the browser window first so the keypress is not lost.
+    """
+    if not _PYAUTOGUI:
+        return "PyAutoGUI is not installed. Run: pip install pyautogui"
+
+    if player:
+        player.write_log("[YouTube] Fullscreen toggle")
+    print("[YouTube] 🖥️  Toggling fullscreen")
+
+    focused = _focus_browser_window()
+    if not focused:
+        # Still attempt the keypress — it may work if the window is already focused
+        print("[YouTube] ⚠️  Proceeding without confirmed window focus")
+
+    try:
+        import time as _time
+        _time.sleep(0.15)         # small settle time
+        pyautogui.press("f")      # YouTube fullscreen toggle key
+        return "Fullscreen toggled, sir."
+    except Exception as e:
+        return f"Could not send fullscreen key: {e}"
+
+
+def _handle_skip_ad(parameters: dict, player) -> str:
+    """
+    Attempts to skip YouTube video advertisement.
+    Focuses the YouTube browser window first, then attempts to locate/click
+    the Skip Ad button or sends navigation keypresses. Graceful fallback if not found.
+    """
+    if not _PYAUTOGUI:
+        return "PyAutoGUI is not installed."
+
+    if player:
+        player.write_log("[YouTube] Skip ad requested")
+
+    _focus_browser_window()
+    import time as _time
+    _time.sleep(0.2)
+
+    # Strategy 1: Look for reference screenshot in config/skip_ad.png
+    skip_img = BASE_DIR / "config" / "skip_ad.png"
+    if skip_img.exists():
+        try:
+            pos = pyautogui.locateCenterOnScreen(str(skip_img), confidence=0.7)
+            if pos:
+                pyautogui.click(pos)
+                return "Ad skipped, sir."
+        except Exception as e:
+            print(f"[YouTube] ⚠️ Skip ad image search failed: {e}")
+
+    # Strategy 2: HTML5 player skip focus keypress
+    try:
+        pyautogui.press("tab")
+        _time.sleep(0.1)
+        pyautogui.press("enter")
+        return "Attempted to skip ad, sir."
+    except Exception as e:
+        return f"Could not skip ad: {e}"
+
+
+# ── Close browser helpers ─────────────────────────────────────────────────
+def _close_via_proc_handle() -> bool:
+    """Tier 1: terminate the exact process Jarvis launched."""
+    global _browser_proc
+    if _browser_proc is None:
+        return False
+    try:
+        poll = _browser_proc.poll()
+        if poll is None:  # still running
+            _browser_proc.terminate()
+            import time as _time
+            _time.sleep(0.4)
+            if _browser_proc.poll() is None:
+                _browser_proc.kill()   # force-kill if terminate didn't work
+        _browser_proc = None
+        print("[YouTube] ✅ Browser closed via process handle")
+        return True
+    except Exception as e:
+        print(f"[YouTube] ⚠️ proc.terminate() failed: {e}")
+        _browser_proc = None
+        return False
+
+
+def _close_via_pygetwindow() -> bool:
+    """Tier 2: find a YouTube/browser window by title and close it."""
+    if not _PYGETWINDOW:
+        return False
+    try:
+        import time as _time
+        all_windows = gw.getAllWindows()
+        for kw in ("youtube", "google chrome", "microsoft edge",
+                   "firefox", "opera", "brave", "vivaldi"):
+            for win in all_windows:
+                title = (win.title or "").lower()
+                if kw in title and win.visible:
+                    try:
+                        win.close()
+                        _time.sleep(0.3)
+                        print(f"[YouTube] ✅ Closed window via pygetwindow: '{win.title}'")
+                        return True
+                    except Exception as e:
+                        print(f"[YouTube] ⚠️ pygetwindow.close() failed for '{win.title}': {e}")
+    except Exception as e:
+        print(f"[YouTube] ⚠️ pygetwindow window scan failed: {e}")
+    return False
+
+
+def _close_via_taskkill(pid: int | None = None) -> bool:
+    """
+    Tier 3 (Windows only): taskkill by PID.
+    We NEVER kill by image name (chrome.exe) as that would close ALL Chrome
+    windows. We only use /PID which targets a single process.
+    """
+    import platform as _platform
+    if _platform.system() != "Windows":
+        return False
+    if pid is None:
+        return False
+    try:
+        result = subprocess.run(
+            ["taskkill", "/PID", str(pid), "/F"],
+            capture_output=True, text=True, timeout=8,
+        )
+        if result.returncode == 0:
+            print(f"[YouTube] ✅ Closed process PID {pid} via taskkill")
+            return True
+        print(f"[YouTube] ⚠️ taskkill failed: {result.stderr.strip()}")
+    except Exception as e:
+        print(f"[YouTube] ⚠️ taskkill exception: {e}")
+    return False
+
+
+def _handle_close_browser(parameters: dict, player) -> str:
+    """
+    Closes the browser window that Jarvis opened.
+    Strategy (in order):
+      1. Terminate the stored process handle (exact PID, cleanest)
+      2. Find and close a YouTube/browser window via pygetwindow
+      3. taskkill /PID <pid> (Windows only, still targets only one process)
+    """
+    global _browser_proc
+
+    if player:
+        player.write_log("[YouTube] Close browser")
+    print("[YouTube] 🗑️  Attempting to close browser window")
+
+    # Capture PID before Tier 1 clears the handle
+    saved_pid = _browser_proc.pid if _browser_proc else None
+
+    # Tier 1
+    if _close_via_proc_handle():
+        return "Browser closed, sir."
+
+    # Tier 2
+    if _close_via_pygetwindow():
+        return "Browser window closed, sir."
+
+    # Tier 3 (Windows only, PID-targeted)
+    if saved_pid and _close_via_taskkill(saved_pid):
+        return "Browser process terminated, sir."
+
+    return (
+        "Could not close the browser automatically, sir. "
+        "Please close it manually. "
+        "(Tip: if Jarvis opened Chrome, it may have been opened as a child of cmd.exe "
+        "and the handle may have expired.)"
+    )
+
+
 _ACTION_MAP = {
-    "play":      _handle_play,
-    "summarize": _handle_summarize,
-    "get_info":  _handle_get_info,
-    "trending":  _handle_trending,
+    "play":       _handle_play,
+    "summarize":  _handle_summarize,
+    "get_info":   _handle_get_info,
+    "trending":   _handle_trending,
+    "fullscreen": _handle_fullscreen,
+    "skip_ad":    _handle_skip_ad,
+    "close":      _handle_close_browser,
 }
 
 
@@ -425,12 +668,14 @@ def youtube_video(
     if handler is None:
         return (
             f"Unknown YouTube action: '{action}'. "
-            "Available: play, summarize, get_info, trending."
+            "Available: play, summarize, get_info, trending, fullscreen, skip_ad, close."
         )
 
     try:
-        if action == "play":
+        # Handlers that only need (params, player)
+        if action in ("play", "fullscreen", "skip_ad", "close"):
             return handler(params, player) or "Done."
+        # Handlers that also need speak
         return handler(params, player, speak) or "Done."
     except Exception as e:
         print(f"[YouTube] ❌ Error in {action}: {e}")
@@ -440,13 +685,22 @@ def youtube_video(
 # ── Tool declaration (auto-discovered by core/action_loader.py) ──────────────
 TOOL = {
     "name": "youtube_video",
-    "description": "Controls YouTube. Use for: playing videos, summarizing a video's content, getting video info, or showing trending videos.",
+    "description": (
+        "Controls YouTube. Use for: playing videos, summarizing a video's content, "
+        "getting video info, showing trending videos, toggling fullscreen on the "
+        "currently playing video, skipping advertisements, or closing the browser window opened by Jarvis. "
+        "Use action='fullscreen' when the user says 'full screen', 'make it full screen', "
+        "'press f', 'fullscreen mode', or similar. "
+        "Use action='skip_ad' when the user says 'skip ad', 'skip this ad', 'skip advertisement'. "
+        "Use action='close' when the user says 'close the browser', 'close this', "
+        "'close the window', or 'close YouTube'."
+    ),
     "parameters": {
         "type": "OBJECT",
         "properties": {
             "action": {
                 "type": "STRING",
-                "description": "play | summarize | get_info | trending (default: play)"
+                "description": "play | summarize | get_info | trending | fullscreen | skip_ad | close (default: play)"
             },
             "query": {
                 "type": "STRING",

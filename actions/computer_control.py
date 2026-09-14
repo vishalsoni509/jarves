@@ -492,6 +492,43 @@ def computer_control(
         if action == "focus_window":
             return _focus_window(params.get("title", ""))
 
+        if action in ("task_manager", "open_task_manager"):
+            if _platform_os() == "windows":
+                subprocess.Popen(["cmd", "/c", "start", "taskmgr"], **_WIN_HIDE)
+                return "Opened Task Manager, sir."
+            elif _platform_os() == "mac":
+                subprocess.Popen(["open", "-a", "Activity Monitor"])
+                return "Opened Activity Monitor, sir."
+            else:
+                subprocess.Popen(["gnome-system-monitor"])
+                return "Opened System Monitor, sir."
+
+        if action in ("end_task", "kill_process", "close_process"):
+            proc_name = params.get("title", "") or params.get("text", "") or params.get("process", "")
+            if not proc_name:
+                return "Please specify the process or application to close."
+            import psutil
+            target = proc_name.lower().replace(".exe", "").strip()
+            killed = 0
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    pname = (proc.info['name'] or "").lower()
+                    if target in pname:
+                        proc.terminate()
+                        killed += 1
+                except Exception:
+                    continue
+            if killed > 0:
+                return f"Terminated {killed} process instance(s) matching '{proc_name}', sir."
+            if _platform_os() == "windows":
+                try:
+                    res = subprocess.run(["taskkill", "/IM", f"{target}.exe", "/F"], capture_output=True, text=True, **_WIN_HIDE)
+                    if res.returncode == 0:
+                        return f"Closed '{proc_name}' via taskkill, sir."
+                except Exception:
+                    pass
+            return f"No running process matching '{proc_name}' was found, sir."
+
         if action == "random_data":
             dt     = params.get("type", "name")
             result = _random_data(dt)
@@ -517,17 +554,17 @@ def computer_control(
 # ── Tool declaration (auto-discovered by core/action_loader.py) ──────────────
 TOOL = {
     "name": "computer_control",
-    "description": "Direct computer control: type, click, hotkeys, scroll, move mouse, screenshots, find elements on screen.",
+    "description": "Direct computer control: type, click, hotkeys, scroll, move mouse, screenshots, open task manager, end/close specific running tasks or applications.",
     "parameters": {
         "type": "OBJECT",
         "properties": {
             "action": {
                 "type": "STRING",
-                "description": "type | smart_type | click | double_click | right_click | hotkey | press | scroll | move | copy | paste | screenshot | wait | clear_field | focus_window | screen_find | screen_click | random_data | user_data"
+                "description": "type | smart_type | click | double_click | right_click | hotkey | press | scroll | move | copy | paste | screenshot | wait | clear_field | focus_window | open_task_manager | end_task | screen_find | screen_click | random_data | user_data"
             },
             "text": {
                 "type": "STRING",
-                "description": "Text to type or paste"
+                "description": "Text to type, paste, or process name to end"
             },
             "x": {
                 "type": "INTEGER",

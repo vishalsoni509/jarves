@@ -60,7 +60,9 @@ def _get_macos_wifi_interface() -> str:
 
 def volume_up():
     if _OS == "Windows":
-        for _ in range(5): pyautogui.press("volumeup")
+        for _ in range(5):
+            pyautogui.press("volumeup")
+            time.sleep(0.06)
     elif _OS == "Darwin":
         subprocess.run(["osascript", "-e",
             "set volume output volume (output volume of (get volume settings) + 10)"],
@@ -71,7 +73,9 @@ def volume_up():
 
 def volume_down():
     if _OS == "Windows":
-        for _ in range(5): pyautogui.press("volumedown")
+        for _ in range(5):
+            pyautogui.press("volumedown")
+            time.sleep(0.06)
     elif _OS == "Darwin":
         subprocess.run(["osascript", "-e",
             "set volume output volume (output volume of (get volume settings) - 10)"],
@@ -904,6 +908,13 @@ def computer_settings(
         # A pure toggle: calling it again is the undo.
         push_undo("dark mode toggled",
                   lambda: (dark_mode(), "Theme switched back.")[1])
+
+    if action in ("volume_up", "volume_down"):
+        new_vol = volume_get()
+        direction = "up" if action == "volume_up" else "down"
+        if new_vol is not None:
+            return f"Volume turned {direction} to {new_vol}%, sir."
+        return f"Volume turned {direction}, sir."
 
     return f"Done: {action}."
 

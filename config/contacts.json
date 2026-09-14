@@ -1,0 +1,6 @@
+{
+  "_comment": "Map contact names to phone numbers in E.164 format (e.g. +91XXXXXXXXXX). Jarvis uses this file for WhatsApp messaging and calls.",
+  "Rahul": "+911234567890",
+  "Mom": "+911234567891",
+  "Dad": "+911234567892"
+}
