@@ -70,8 +70,7 @@ from actions.background_monitor import (
 from actions.web_search        import _news as _fetch_news_sync
 from actions.english_tutor     import (
     EnglishTutorSession, tutor_recorder, _load_tutor_memory,
-    _save_tutor_memory, check_stop_keyword, check_global_command,
-    check_score_query,
+    _save_tutor_memory,
 )
 from memory.config_manager     import (
     get_brief_enabled, get_voice, get_wake_word_enabled, save_wake_word_enabled, get_input_device, get_output_device,
@@ -429,10 +428,6 @@ class JarvisLive:
         self._tutor_session: EnglishTutorSession | None = None
         self._tutor_recording = False
         self._tutor_last_turn_time = 0.0
-        # Mode state machine: "ASSISTANT" | "TUTOR"
-        self._mode = "ASSISTANT"
-        # Echo guard: ignore mic input briefly after Jarvis stops speaking
-        self._echo_guard_until = 0.0
 
         self._enhanced_live = True  # proactive audio; auto-disabled if the server rejects it
 
@@ -669,12 +664,6 @@ class JarvisLive:
         if "START ENGLISH TUTOR SESSION" in _t or "START ENGLISH TUTOR" in _t:
             self._tutor_start()
             return
-        if "CLOSE_TUTOR" in _t or "EXIT_TUTOR" in _t:
-            self._tutor_close()
-            return
-        if "WHAT IS MY SCORE" in _t or "WHAT'S MY SCORE" in _t or "TELL ME MY SCORE" in _t:
-            self._tutor_speak_score()
-            return
         # Respect wake-word sleep: a typed command must not be answered while
         # asleep either (the sleep gate is not just for the mic). Wake first with
         # "Hey Jarvis" or the WAKE NOW button.
@@ -691,93 +680,32 @@ class JarvisLive:
 
     def set_speaking(self, value: bool):
         with self._speaking_lock:
-            was_speaking = self._is_speaking
             self._is_speaking = value
-        if was_speaking and not value:
-            # Echo guard: ignore mic input briefly after Jarvis stops speaking
-            self._echo_guard_until = time.monotonic() + 0.6
-            # If in tutor mode and session active, arm recorder now that speech finished
-            if self._mode == "TUTOR" and self.ui.tutor_active and self._tutor_session:
-                self._tutor_arm_recorder()
         if value:
             self.ui.set_state("SPEAKING")
         elif not self.ui.muted:
             self.ui.set_state("LISTENING")
 
-    def _handle_global_text_action(self, text: str):
-        """Execute a global action (volume, media, etc.) without disrupting tutor state."""
-        _t = text.lower().strip()
-        if "skip" in _t and "ad" in _t:
-            try:
-                from actions.youtube_video import _handle_skip_ad
-                _handle_skip_ad({}, None)
-                self.ui.write_log("SYS: Ad skipped.")
-            except Exception as e:
-                self.ui.write_log(f"SYS: Skip ad error: {e}")
-            return
-        if "volume up" in _t or "increase volume" in _t or "louder" in _t:
-            try:
-                import pyautogui
-                for _ in range(5):
-                    pyautogui.press("volumeup")
-                self.ui.write_log("SYS: Volume increased.")
-            except Exception:
-                pass
-            return
-        if "volume down" in _t or "decrease volume" in _t or "lower volume" in _t:
-            try:
-                import pyautogui
-                for _ in range(5):
-                    pyautogui.press("volumedown")
-                self.ui.write_log("SYS: Volume decreased.")
-            except Exception:
-                pass
-            return
-        if "mute" in _t and "unmute" not in _t:
-            try:
-                import pyautogui
-                pyautogui.press("volumemute")
-                self.ui.write_log("SYS: Volume toggled mute.")
-            except Exception:
-                pass
-            return
-        if "unmute" in _t:
-            try:
-                import pyautogui
-                pyautogui.press("volumemute")
-                self.ui.write_log("SYS: Volume unmuted.")
-            except Exception:
-                pass
-            return
-        # Forward any other action (browser, persona switch, etc.) to command handler
-        self._on_text_command(text)
-
     # ── English Tutor control (invoked from UI overlay) ─────────────────────
 
     def _tutor_start(self):
         """Begin a tutor session: ask an opening question and show LISTENING."""
-        # Always create a fresh session to reset scores
-        self._tutor_session = EnglishTutorSession(
-            on_state_change=self._tutor_on_state
-        )
+        if self._tutor_session is None:
+            self._tutor_session = EnglishTutorSession(
+                on_state_change=self._tutor_on_state
+            )
         r = self._tutor_session.start_session()
         q = r["question"]
-        try:
-            self.ui.tutor_overlay.reset_scores()
-        except Exception:
-            pass
         self.ui.tutor_overlay.set_question(q, r["topic"])
         self.ui.tutor_active = True
-        self._set_mode("TUTOR")
-        self.ui.write_log("SYS: English Tutor started — Speaking Mentor active. Scores reset to 0.")
+        self.ui.write_log("SYS: English Tutor started — Speaking Mentor active.")
         # Tell JARVIS to ask the opening question out loud
         self.speak(
             "You are now the English Speaking Mentor. "
-            f"Greet the student briefly and ask them this opening question: {q}. "
-            "Keep your reply SHORT — 2-3 sentences max. Do NOT mention any scores."
+            f"Greet the student briefly and ask them this opening question: {q}"
         )
-        # Note: Recorder will be armed automatically by set_speaking(False)
-        # when Jarvis finishes speaking the opening greeting.
+        # Arm the recorder: capture the full spoken response
+        self._tutor_arm_recorder()
 
     def _tutor_arm_recorder(self):
         """Start buffering mic audio for pronunciation analysis."""
@@ -844,81 +772,46 @@ class JarvisLive:
             )
         )
 
-        # JARVIS speaks the tutor reply (conversational, no scores)
-        tutor_reply = report.get("tutor_reply", "")
-        if tutor_reply:
-            self.speak(
-                "You are the English Speaking Mentor. Say EXACTLY this to the student "
-                "(do NOT add scores or numbers): " + tutor_reply
-            )
+        # JARVIS speaks concise feedback + a follow-up
+        fb = self._tutor_feedback_speech(report)
+        self.speak(fb)
+
+        # Arm recorder for the next answer
+        self._tutor_arm_recorder()
+
+    def _tutor_feedback_speech(self, report: dict) -> str:
+        """Compose a concise spoken feedback prompt for JARVIS."""
+        s = report.get("scores", {})
+        lines = [
+            "You are the English Speaking Mentor. Give the student concise spoken feedback:",
+            f"Grammar {s.get('grammar', '–')}/10, Vocabulary {s.get('vocabulary', '–')}/10, "
+            f"Fluency {s.get('fluency', '–')}/10"
+        ]
+        p = report.get("pronunciation", {})
+        if p.get("available") and p.get("score"):
+            lines.append(f"Pronunciation {p.get('score')}/10.")
         else:
-            # Fallback: ask a follow-up
-            nq = self._tutor_session.next_question().get("question", "")
-            self.speak(
-                "You are the English Speaking Mentor. Briefly acknowledge the student's response "
-                "and ask them: " + nq + ". Keep it SHORT. Do NOT mention scores."
+            lines.append("Pronunciation analysis unavailable for this response.")
+        oc = report.get("overall_feedback", "")
+        if oc:
+            lines.append(f"Overall: {oc}")
+        # Grammar fix suggestion
+        gi = report.get("grammar_issues", [])
+        if gi:
+            g = gi[0]
+            lines.append(
+                f"One grammar tip: {g.get('issue', '')} — say '{g.get('correction', '')}' instead."
             )
-        # Note: set_speaking(False) will automatically arm the recorder
-        # and start the echo cooldown as soon as Jarvis finishes speaking.
-
-    def _set_mode(self, mode: str):
-        """Central mode switch: ASSISTANT or TUTOR."""
-        old = self._mode
-        self._mode = mode
-        self.ui.write_log(f"SYS: Mode switch {old} -> {mode}")
-
-    def _tutor_close(self):
-        """Close tutor mode cleanly: stop speech, give final summary, destroy popup."""
-        self.ui.write_log("SYS: Closing English Tutor...")
-
-        # Stop any ongoing speech
-        self.interrupt()
-
-        # Stop tutor recorder if active
-        if self._tutor_recording:
-            self._tutor_stop_recorder()
-
-        # Get final summary before destroying session
-        summary_text = ""
-        if self._tutor_session and self._tutor_session._round_count > 0:
-            summary_text = self._tutor_session.get_final_summary_text()
-            self._tutor_session.end_session()
-
-        # Switch mode back
-        self._set_mode("ASSISTANT")
-        self.ui.tutor_active = False
-
-        # Hide the overlay/dialog
-        try:
-            self.ui.tutor_overlay.close_tutor()
-        except Exception:
-            try:
-                self.ui.tutor_overlay.hide()
-            except Exception:
-                pass
-
-        # Speak the final summary once
-        if summary_text:
-            self.speak(
-                "The English tutor session has ended. Give the student this final summary: "
-                + summary_text
-            )
-        else:
-            self.speak("English tutor session closed.")
-
-        # Clear the session
-        self._tutor_session = None
-        self.ui.write_log("SYS: English Tutor closed. Back to Assistant mode.")
-
-    def _tutor_speak_score(self):
-        """Speak the current score (only when user asks)."""
-        if not self._tutor_session:
-            return
-        score_text = self._tutor_session.get_score_report_text()
-        self.speak(
-            "The student asked about their score. Tell them: " + score_text
+        # Pronunciation practice word
+        pw = report.get("practice_words", [])
+        if pw:
+            lines.append(f"Practice pronouncing the word '{pw[0]}'.")
+        # Next question
+        nq = self._tutor_session.next_question().get("question", "")
+        lines.append(
+            "Then ask the student the next question naturally: " + nq
         )
-        self.ui.write_log("SYS: Score spoken on user request.")
+        return "\n".join(lines)
 
     def _tutor_on_state(self, state: str):
         try:
@@ -1003,8 +896,6 @@ class JarvisLive:
         self.set_speaking(False)
         if self._turn_done_event:
             self._turn_done_event.clear()
-        # Set echo guard: ignore mic input for a short window
-        self._echo_guard_until = time.monotonic() + 0.3
         self.ui.write_log("SYS: Interrupted — listening...")
 
     def speak(self, text: str):
@@ -1293,30 +1184,14 @@ class JarvisLive:
                 return
             with self._speaking_lock:
                 jarvis_speaking = self._is_speaking
-            if not self.ui.muted and not self._phone_active:
-                # Always send audio to Gemini for barge-in detection,
-                # but skip if echo guard is active (Jarvis just stopped speaking)
-                if jarvis_speaking:
-                    # During speech, still send audio so Gemini can detect interrupts
-                    # via input_transcription. The Live API handles this natively.
-                    data = indata.tobytes()
-                    loop.call_soon_threadsafe(
-                        self.out_queue.put_nowait,
-                        {"data": data, "mime_type": "audio/pcm"}
-                    )
-                else:
-                    data = indata.tobytes()
-                    loop.call_soon_threadsafe(
-                        self.out_queue.put_nowait,
-                        {"data": data, "mime_type": "audio/pcm"}
-                    )
-                # Feed audio to English Tutor recorder when active and not echoing TTS
-                if (
-                    self.ui.tutor_active
-                    and tutor_recorder.is_recording
-                    and not jarvis_speaking
-                    and time.monotonic() > self._echo_guard_until
-                ):
+            if not jarvis_speaking and not self.ui.muted and not self._phone_active:
+                data = indata.tobytes()
+                loop.call_soon_threadsafe(
+                    self.out_queue.put_nowait,
+                    {"data": data, "mime_type": "audio/pcm"}
+                )
+                # Feed audio to English Tutor recorder when active
+                if self.ui.tutor_active and tutor_recorder.is_recording:
                     try:
                         tutor_recorder.feed(indata)
                     except Exception:
@@ -1417,13 +1292,6 @@ class JarvisLive:
                             if txt:
                                 in_buf.append(txt)
                                 self._last_user_speech = time.monotonic()
-                                # Barge-in: check for stop keywords in partial input
-                                # while Jarvis is speaking
-                                with self._speaking_lock:
-                                    _speaking_now = self._is_speaking
-                                if _speaking_now and check_stop_keyword(txt):
-                                    self.ui.write_log("SYS: Barge-in stop keyword detected.")
-                                    self.interrupt()
 
                         if sc.turn_complete:
                             if self._turn_done_event:
@@ -1441,46 +1309,9 @@ class JarvisLive:
                             if full_in:
                                 self.ui.write_log(f"You: {full_in}")
                                 self._session_log.append(f"User: {full_in}")
-
-                                # ── Mode-aware routing ───────────────────
-                                if self._mode == "TUTOR" and self.ui.tutor_active and self._tutor_session:
-                                    with self._speaking_lock:
-                                        _speaking_now = self._is_speaking
-                                    if _speaking_now or time.monotonic() < self._echo_guard_until:
-                                        # Echo guard: ignore turn completion during/right after Jarvis speaks
-                                        in_buf = []
-                                        continue
-
-                                    # Check global commands FIRST
-                                    global_cmd = check_global_command(full_in)
-                                    if global_cmd in ("SWITCH_ASSISTANT", "CLOSE_TUTOR"):
-                                        self.ui.write_log(f"SYS: Global command detected: {global_cmd}")
-                                        self._tutor_close()
-                                    elif global_cmd == "SKIP_AD":
-                                        self.ui.write_log("SYS: Global command 'skip_ad' routed.")
-                                        try:
-                                            from actions.youtube_video import _handle_skip_ad
-                                            _handle_skip_ad({}, None)
-                                        except Exception as e:
-                                            self.ui.write_log(f"SYS: Skip ad error: {e}")
-                                    elif global_cmd in ("VOLUME_CONTROL", "MEDIA_CONTROL", "BROWSER_CONTROL", "PERSONA_SWITCH"):
-                                        self.ui.write_log(f"SYS: Global command '{global_cmd}' routed to assistant.")
-                                        self._handle_global_text_action(full_in)
-                                    elif check_score_query(full_in):
-                                        # User asked about their score — speak it
-                                        self.ui.write_log("SYS: Score query detected.")
-                                        self._tutor_speak_score()
-                                    elif check_stop_keyword(full_in):
-                                        # Barge-in: user said stop/wait
-                                        self.ui.write_log("SYS: Stop keyword detected — interrupting.")
-                                        self.interrupt()
-                                    else:
-                                        # Normal tutor speech: analyze
-                                        self._tutor_on_final_transcript(full_in)
-                                elif self.ui.tutor_active and self._tutor_session:
-                                    # Tutor active but mode not set (legacy)
+                                # English Tutor: analyze the student's spoken answer
+                                if self.ui.tutor_active and self._tutor_session:
                                     self._tutor_on_final_transcript(full_in)
-
                                 if self._dashboard:
                                     asyncio.create_task(self._dashboard.broadcast({
                                         "type": "log", "speaker": "user",
@@ -2170,7 +2001,7 @@ class JarvisLive:
             await asyncio.sleep(delay)
 
 def main():
-    ui = JarvisUI("config/mj.png")
+    ui = JarvisUI("face.png")
 
     def runner():
         ui.wait_for_api_key()

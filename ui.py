@@ -28,7 +28,7 @@ from PyQt6.QtGui import (
     QPen, QPixmap, QRadialGradient, QShortcut,
 )
 from PyQt6.QtWidgets import (
-    QApplication, QComboBox, QDialog, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
+    QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QMainWindow, QPushButton, QScrollArea, QSizePolicy, QSplitter,
     QStackedWidget, QTextEdit, QVBoxLayout, QWidget, QProgressBar,
 )
@@ -374,125 +374,22 @@ class _SysMetrics:
 
 _metrics = _SysMetrics()
 
-
-class AudioWaveformVisualizer:
-    """
-    Dedicated audio waveform visualizer for JARVIS.
-    Renders two symmetrical waveform wings flanking the central microphone control.
-    Reacts to real-time audio amplitude (microphones and TTS speech output)
-    with smooth interpolation, peak decay, and state-aware color schemes.
-    """
-    def __init__(self, bars_per_wing: int = 24):
-        self.bars_n = bars_per_wing
-        self._peaks_l = [0.0] * bars_per_wing
-        self._peaks_r = [0.0] * bars_per_wing
-
-    def render(
-        self, p: QPainter, cx: float, sy: float,
-        dest_rect: QRectF, amp: float, tick: int,
-        state: str, speaking: bool, active: bool
-    ) -> None:
-        inner_margin = dest_rect.width() * (50.0 / 630.0)
-        wing_w = dest_rect.width() * (135.0 / 630.0)
-
-        bw = (wing_w / self.bars_n) * 0.58
-        bgap = (wing_w / self.bars_n) * 0.42
-
-        base_h = 2.5
-        is_listening = (state == "LISTENING")
-
-        amp_scale = 38.0 if speaking else (32.0 if is_listening else (18.0 if active else 3.5))
-        spd = 0.28 if speaking else (0.22 if is_listening else 0.08)
-
-        for side in (-1, 1):
-            peaks = self._peaks_l if side < 0 else self._peaks_r
-            for i in range(self.bars_n):
-                dist_norm = i / max(1, self.bars_n - 1)
-                env = math.sin(dist_norm * math.pi) ** 0.82
-
-                phase1 = tick * spd + i * 0.46 * side
-                phase2 = tick * (spd * 0.6) - i * 0.32 * side
-                harmonic = 0.5 * math.sin(phase1) + 0.5 * math.cos(phase2)
-                ripple = 0.35 + 0.65 * abs(harmonic)
-
-                target_h = base_h + env * (amp * amp_scale * (0.35 + 0.65 * ripple) + (2.2 * ripple if active else 0.8))
-                target_h = max(2.0, min(52.0, target_h))
-
-                # Smooth peak decay
-                if target_h > peaks[i]:
-                    peaks[i] = target_h
-                else:
-                    peaks[i] = max(target_h, peaks[i] * 0.88)
-
-                hgt = peaks[i]
-
-                if side < 0:
-                    bx = cx - inner_margin - (i + 1) * bw - i * bgap
-                else:
-                    bx = cx + inner_margin + i * (bw + bgap)
-
-                # State-aware color palette
-                grad = QLinearGradient(0, sy - hgt / 2, 0, sy + hgt / 2)
-                if is_listening:
-                    grad.setColorAt(0.0, QColor("#e0ffff"))
-                    grad.setColorAt(0.35, QColor("#00e5ff"))
-                    grad.setColorAt(0.75, QColor("#0088cc"))
-                    grad.setColorAt(1.0, QColor("#004488"))
-                else:
-                    grad.setColorAt(0.0, QColor("#fff8d6"))
-                    grad.setColorAt(0.35, QColor("#ffbb00"))
-                    grad.setColorAt(0.75, QColor("#ff7700"))
-                    grad.setColorAt(1.0, QColor("#ff4400"))
-
-                p.setPen(Qt.PenStyle.NoPen)
-                p.setBrush(QBrush(grad))
-                p.drawRoundedRect(QRectF(bx, sy - hgt / 2, bw, hgt), bw / 2, bw / 2)
-
-                # Subtle pedestal glass reflection
-                ref_h = hgt * 0.38
-                ref_y = sy + hgt / 2 + 1.5
-                ref_grad = QLinearGradient(0, ref_y, 0, ref_y + ref_h)
-                if is_listening:
-                    ref_grad.setColorAt(0.0, QColor(0, 229, 255, 60 + int(amp * 50)))
-                    ref_grad.setColorAt(1.0, QColor(0, 100, 200, 0))
-                else:
-                    ref_grad.setColorAt(0.0, QColor(255, 180, 0, 60 + int(amp * 50)))
-                    ref_grad.setColorAt(1.0, QColor(255, 100, 0, 0))
-                p.setBrush(QBrush(ref_grad))
-                p.drawRoundedRect(QRectF(bx, ref_y, bw, ref_h), bw / 2, bw / 2)
-
-
 class HudCanvas(QWidget):
     """
-    Center AI Core panel — Fully Procedural Cinematic Golden Holographic JARVIS AI Core.
-
-    No image files used. Renders in real time via Canvas/QPainter:
-      - Cinematic dark navy/black environment with radial atmospheric glow
-      - Futuristic vertical light panels, holographic side monitors, radar circles
-      - Technical HUD markings, data grids, floating ambient particles
-      - Large 3D-looking golden holographic globe:
-          * Latitude/longitude sphere grid lines
-          * Dynamic circuit traces & fragmented golden geometry patches
-          * Concentric inner glow rings & orbital paths with traveling nodes
-          * Radial scanning effects, glowing scan particles
-          * Soft golden volumetric glow & warm amber/orange illumination
-      - 'JARVIS' UI text rendered at globe center
-      - 3D volumetric particle swarm with perspective projection & audio pulse
+    3D Golden-Amber Holographic AI Core Canvas for JARVIS / System-Assist.
+    Features:
+      - 3D rotating particle lattice intelligence with depth projection
       - Concentric 3D gimbal orbital rings with traveling energy nodes
-      - Dynamic volumetric golden breathing glow & subtle blue secondary lighting
-      - Holographic platform / pedestal projector with vertical light conduits
-      - Processing / analyzing laser scan sweep & HUD target reticles
-      - Dedicated AudioWaveformVisualizer component with two symmetrical wings
-      - Interactive central microphone control with click-to-mute support
-      - Real UI typography for JARVIS and dynamic application status
+      - Multi-layer volumetric golden-amber core with radiant corona
+      - Dynamic holographic circuit traces and glowing node networks
+      - Reactive audio expansion, particle ejection, and HUD equalizers
+      - Holographic technical telemetry markings & Vernier scale
     """
 
     def __init__(self, face_path: str, assistant_name: str = "J.A.R.V.I.S", parent=None):
         super().__init__(parent)
-        self._face_path = (face_path or "").strip()  # kept for API compat; not used
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)
-        self.setMouseTracking(True)
-        self.setMinimumSize(360, 340)
+        self.setMinimumSize(300, 300)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         self.muted    = False
@@ -500,51 +397,108 @@ class HudCanvas(QWidget):
         self.state    = "INITIALISING"
         self._assistant_name = assistant_name
 
-        self._tick = 0
-        self._live_amp = 0.0
-        self._amp_disp = 0.0
-        self._dest_rect: QRectF | None = None
-        self._waveform = AudioWaveformVisualizer(bars_per_wing=24)
+        self._tick       = 0
+        self._scale      = 1.0
+        self._tgt_scale  = 1.0
+        self._halo       = 60.0
+        self._tgt_halo   = 60.0
+        self._last_t     = time.time()
 
-        # 3D Particle Field (85 volumetric particles in spherical space)
-        self._particles: list[dict] = []
-        random.seed(42)
-        for _ in range(85):
-            self._particles.append({
-                "theta": random.uniform(0, math.tau),
-                "phi": random.uniform(-math.pi * 0.45, math.pi * 0.45),
-                "r": random.uniform(0.82, 1.34),
-                "dtheta": random.uniform(0.008, 0.024) * (1 if random.random() > 0.5 else -1),
-                "dphi": random.uniform(0.003, 0.012) * (1 if random.random() > 0.5 else -1),
-                "sz": random.uniform(1.4, 3.2),
-                "alpha": random.uniform(0.4, 1.0),
-                "color_type": random.choices(["gold", "amber", "cyan", "white"], weights=[60, 25, 10, 5])[0]
-            })
+        # 3D Rotation angles
+        self._yaw   = 0.0
+        self._pitch = 0.35   # ~20 degrees inclination
+        self._roll  = 0.0
 
-        # Floating ambient environment particles
-        random.seed(99)
-        self._env_particles: list[dict] = []
-        for _ in range(45):
-            self._env_particles.append({
-                "x": random.uniform(0.05, 0.95),
-                "y": random.uniform(0.05, 0.95),
-                "vx": random.uniform(-0.0002, 0.0002),
-                "vy": random.uniform(-0.0003, -0.0001),
-                "sz": random.uniform(0.8, 2.2),
-                "alpha": random.uniform(0.2, 0.7),
-                "color": random.choices(["gold", "cyan", "blue"], weights=[55, 30, 15])[0],
-            })
+        # Orbital gimbal ring angles
+        self._orbit_angles = [0.0, 120.0, 240.0, 60.0]
+        self._scan  = 0.0
+        self._scan2 = 180.0
 
-        # Circuit trace seeds for globe surface
-        random.seed(17)
-        self._circuit_seeds: list[dict] = []
-        for _ in range(18):
-            self._circuit_seeds.append({
-                "theta0": random.uniform(0, math.tau),
-                "phi0": random.uniform(-math.pi * 0.38, math.pi * 0.38),
-                "len": random.randint(4, 9),
-                "phase": random.uniform(0, math.tau),
-            })
+        # Pulse waves & particle fields
+        self._pulses: list[float] = [0.0, 60.0, 120.0]
+        self._blink      = True
+        self._blink_tick = 0
+        self._burst_particles: list[list[float]] = []  # [x, y, vx, vy, life, max_life, size, col_type]
+        self._ambient_particles: list[list[float]] = [] # [theta, phi, r_offset, speed, sz, alpha_phase]
+
+        # Initialize ambient floating particle field around the sphere
+        for _ in range(75):
+            self._ambient_particles.append([
+                random.uniform(0, 2 * math.pi),
+                random.uniform(-math.pi / 2, math.pi / 2),
+                random.uniform(0.85, 1.35),
+                random.uniform(0.008, 0.025) * (1 if random.random() > 0.5 else -1),
+                random.uniform(1.2, 3.2),
+                random.uniform(0, 2 * math.pi)
+            ])
+
+        # Precompute 3D sphere lattice nodes (latitude / longitude grid)
+        self._sphere_nodes: list[tuple[float, float, float, int, int]] = []
+        lats, lons = 14, 24
+        for i in range(lats):
+            lat = -math.pi / 2 + (i + 0.5) * (math.pi / lats)
+            for j in range(lons):
+                lon = j * (2 * math.pi / lons)
+                x = math.cos(lat) * math.cos(lon)
+                y = math.sin(lat)
+                z = math.cos(lat) * math.sin(lon)
+                self._sphere_nodes.append((x, y, z, i, j))
+
+        # Earth continent landmass polygon outlines for 3D Globe Projection
+        continents = [
+            # North America
+            [(70, -165), (71, -130), (70, -80), (60, -60), (45, -55), (42, -70), (30, -80), (25, -80), (18, -100), (30, -115), (48, -125), (60, -145)],
+            # South America
+            [(12, -75), (8, -50), (-5, -35), (-22, -40), (-40, -62), (-54, -68), (-45, -75), (-20, -70), (0, -80)],
+            # Europe
+            [(70, 25), (60, 30), (55, 38), (45, 30), (38, 24), (36, -6), (44, -8), (52, 5), (60, 5)],
+            # Africa
+            [(37, 10), (32, 32), (12, 50), (-5, 40), (-34, 25), (-34, 18), (5, 0), (15, -17), (35, -5)],
+            # Asia
+            [(75, 100), (70, 175), (60, 160), (40, 130), (22, 120), (10, 105), (20, 80), (35, 60), (60, 60)],
+            # Australia
+            [(-12, 130), (-15, 150), (-35, 150), (-38, 140), (-32, 115), (-20, 115)]
+        ]
+        self._land_nodes: list[tuple[float, float, float]] = []
+        for poly in continents:
+            for i in range(len(poly)):
+                lat1, lon1 = poly[i]
+                lat2, lon2 = poly[(i + 1) % len(poly)]
+                steps = 6
+                for s in range(steps):
+                    t = s / float(steps)
+                    lat = math.radians(lat1 + (lat2 - lat1) * t)
+                    lon = math.radians(lon1 + (lon2 - lon1) * t)
+                    x = math.cos(lat) * math.cos(lon)
+                    y = math.sin(lat)
+                    z = math.cos(lat) * math.sin(lon)
+                    self._land_nodes.append((x, y, z))
+
+        # Inner core shell nodes
+        self._inner_nodes: list[tuple[float, float, float]] = []
+        for i in range(6):
+            lat = -math.pi / 2 + (i + 0.5) * (math.pi / 6)
+            for j in range(12):
+                lon = j * (2 * math.pi / 12)
+                self._inner_nodes.append((
+                    0.55 * math.cos(lat) * math.cos(lon),
+                    0.55 * math.sin(lat),
+                    0.55 * math.cos(lat) * math.sin(lon)
+                ))
+
+        self._face_px: QPixmap | None = None
+        self._face_cache: QPixmap | None = None
+        self._face_cache_sz = -1
+        self._grid_cache: QPixmap | None = None
+        self._grid_key = None
+        self._paint_tick = 0
+        self._load_face(face_path)
+
+        # Live audio reactivity
+        self._live_amp   = 0.0
+        self._amp_disp   = 0.0
+        self._base_scale = 1.0
+        self._base_halo  = 60.0
 
         self._tmr = QTimer(self)
         self._tmr.timeout.connect(self._step)
@@ -559,807 +513,694 @@ class HudCanvas(QWidget):
         if lv > self._live_amp:
             self._live_amp = lv
 
-    # ── Environment Rendering ─────────────────────────────────────────────────
+    def _load_face(self, path: str):
+        try:
+            from PIL import Image, ImageDraw
+            import io
+            img = Image.open(path).convert("RGBA")
+            sz  = min(img.size)
+            img = img.resize((sz, sz), Image.LANCZOS)
+            mk  = Image.new("L", (sz, sz), 0)
+            ImageDraw.Draw(mk).ellipse((2, 2, sz - 2, sz - 2), fill=255)
+            img.putalpha(mk)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            px = QPixmap(); px.loadFromData(buf.getvalue())
+            self._face_px = px
+        except Exception:
+            self._face_px = None
+        self._face_cache    = None
+        self._face_cache_sz = -1
 
-    def _draw_environment(self, p: QPainter, W: int, H: int, amp: float, active: bool) -> None:
-        """Draw the cinematic dark futuristic control-room environment — fully procedural."""
-        cx = W / 2.0
-
-        # 1. Deep space base fill
-        p.fillRect(self.rect(), QColor("#000308"))
-
-        # 2. Radial atmospheric glow — deep navy/indigo haze
-        atm = QRadialGradient(cx, H * 0.48, W * 0.72)
-        atm.setColorAt(0.0, QColor(5, 18, 50, 80))
-        atm.setColorAt(0.38, QColor(3, 10, 30, 50))
-        atm.setColorAt(0.70, QColor(0, 5, 18, 25))
-        atm.setColorAt(1.0, QColor(0, 0, 0, 0))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(atm))
-        p.drawEllipse(QRectF(-W * 0.1, -H * 0.1, W * 1.2, H * 1.2))
-
-        # 3. Subtle tech-grid dot field
-        p.setPen(QPen(QColor(0, 80, 140, 18), 1))
-        grid_sp = 48
-        for gx in range(0, W, grid_sp):
-            for gy in range(0, H, grid_sp):
-                p.drawPoint(gx, gy)
-
-        # 4. Horizontal scan lines (very faint CRT effect)
-        scan_col = QColor(0, 60, 120, 8)
-        p.setPen(QPen(scan_col, 1))
-        for gy in range(0, H, 4):
-            p.drawLine(0, gy, W, gy)
-
-        # 5. Holographic side monitor panels
-        self._draw_side_monitor(p, W, H, side=-1, amp=amp, active=active)
-        self._draw_side_monitor(p, W, H, side=1, amp=amp, active=active)
-
-        # 6. Floating ambient environment particles
-        self._draw_env_particles(p, W, H, amp)
-
-        # 7. Subtle floor base gradient — warm amber glow at bottom
-        floor = QLinearGradient(0, H * 0.72, 0, H)
-        floor.setColorAt(0.0, QColor(0, 0, 0, 0))
-        floor.setColorAt(0.55, QColor(100, 55, 0, 22))
-        floor.setColorAt(1.0, QColor(60, 28, 0, 45))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(floor))
-        p.drawRect(QRectF(0, H * 0.72, W, H * 0.28))
-
-        # 8. Top edge blue ambient glow
-        top_glow = QLinearGradient(0, 0, 0, H * 0.18)
-        top_glow.setColorAt(0.0, QColor(0, 60, 140, 35))
-        top_glow.setColorAt(1.0, QColor(0, 0, 0, 0))
-        p.setBrush(QBrush(top_glow))
-        p.drawRect(QRectF(0, 0, W, H * 0.18))
-
-    def _draw_side_monitor(self, p: QPainter, W: int, H: int, side: int, amp: float, active: bool) -> None:
-        """Draw holographic mini-monitor panels on left or right side."""
-        t = self._tick
-        if side < 0:
-            mx = W * 0.06
-        else:
-            mx = W * 0.94
-
-        # Radar circle monitor
-        radar_cx = mx
-        radar_cy = H * 0.30
-        radar_r  = min(W * 0.065, H * 0.095)
-
-        outer_col = QColor(0, 200, 255, 55 if not active else 80)
-        p.setPen(QPen(outer_col, 1))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(QRectF(radar_cx - radar_r, radar_cy - radar_r, radar_r * 2, radar_r * 2))
-
-        for scale in [0.65, 0.35]:
-            rc = QColor(0, 180, 255, 30)
-            p.setPen(QPen(rc, 0.8))
-            rr = radar_r * scale
-            p.drawEllipse(QRectF(radar_cx - rr, radar_cy - rr, rr * 2, rr * 2))
-
-        sweep_a = (t * 1.8) % 360
-        sweep_rad = math.radians(sweep_a)
-        p.setPen(QPen(QColor(0, 230, 255, 90), 1.2))
-        p.drawLine(QPointF(radar_cx, radar_cy),
-                   QPointF(radar_cx + math.cos(sweep_rad) * radar_r,
-                            radar_cy + math.sin(sweep_rad) * radar_r))
-
-        p.setPen(Qt.PenStyle.NoPen)
-        for i in range(8):
-            tail_a = sweep_a - i * 5.5
-            tail_rad = math.radians(tail_a)
-            tc = QColor(0, 200, 255, max(0, 35 - i * 5))
-            p.setBrush(QBrush(tc))
-            ex = radar_cx + math.cos(tail_rad) * radar_r * 0.92
-            ey = radar_cy + math.sin(tail_rad) * radar_r * 0.92
-            p.drawEllipse(QRectF(ex - 1.5, ey - 1.5, 3, 3))
-
-        p.setPen(QPen(QColor(0, 160, 220, 40), 0.7))
-        p.drawLine(QPointF(radar_cx - radar_r, radar_cy), QPointF(radar_cx + radar_r, radar_cy))
-        p.drawLine(QPointF(radar_cx, radar_cy - radar_r), QPointF(radar_cx, radar_cy + radar_r))
-
-        grid_y = H * 0.50
-        grid_h = H * 0.18
-        grid_w = W * 0.09
-        if side < 0:
-            grid_x = W * 0.01
-        else:
-            grid_x = W * 0.90
-
-        p.setPen(QPen(QColor(0, 140, 200, 50), 1))
-        p.setBrush(QBrush(QColor(0, 8, 20, 80)))
-        p.drawRoundedRect(QRectF(grid_x, grid_y, grid_w, grid_h), 3, 3)
-
-        bars_n = 7
-        bar_w = grid_w / (bars_n * 1.6)
-        bar_gap = grid_w / bars_n
-        for bi in range(bars_n):
-            phase = t * 0.08 + bi * 0.7 + (0 if side < 0 else 1.4)
-            bh = grid_h * (0.18 + 0.62 * abs(math.sin(phase)))
-            bx = grid_x + bi * bar_gap + bar_gap * 0.25
-            by = grid_y + grid_h - bh - 3
-            bc = QColor(255, 180, 0, 120 if active else 70)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(bc))
-            p.drawRect(QRectF(bx, by, bar_w, bh))
-
-        p.setFont(QFont("Courier New", 5, QFont.Weight.Bold))
-        p.setPen(QPen(QColor(0, 180, 255, 100), 1))
-        lbl_text = "SYS-A" if side < 0 else "SYS-B"
-        p.drawText(QRectF(grid_x, grid_y + 2, grid_w, 10), Qt.AlignmentFlag.AlignCenter, lbl_text)
-
-        vp_x = W * 0.115 if side < 0 else W * 0.885
-        vp_y_top = H * 0.12
-        vp_y_bot = H * 0.75
-        vp_w = max(2, W * 0.005)
-        vp_grad = QLinearGradient(vp_x, vp_y_top, vp_x, vp_y_bot)
-        pulse = 0.4 + 0.6 * abs(math.sin(t * 0.04 + (0 if side < 0 else 1.2)))
-        vp_grad.setColorAt(0.0, QColor(0, 0, 0, 0))
-        vp_grad.setColorAt(0.2, QColor(255, 180, 0, int(60 * pulse)))
-        vp_grad.setColorAt(0.5, QColor(255, 210, 80, int(100 * pulse + amp * 60)))
-        vp_grad.setColorAt(0.8, QColor(255, 170, 0, int(50 * pulse)))
-        vp_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(vp_grad))
-        p.drawRect(QRectF(vp_x - vp_w / 2, vp_y_top, vp_w, vp_y_bot - vp_y_top))
-
-        glow_grad = QRadialGradient(vp_x, H * 0.44, W * 0.08)
-        glow_grad.setColorAt(0.0, QColor(255, 160, 0, int(18 * pulse + amp * 20)))
-        glow_grad.setColorAt(1.0, QColor(0, 0, 0, 0))
-        p.setBrush(QBrush(glow_grad))
-        p.drawEllipse(QRectF(vp_x - W * 0.08, H * 0.36, W * 0.16, H * 0.16))
-
-    def _draw_env_particles(self, p: QPainter, W: int, H: int, amp: float) -> None:
-        """Update and draw floating ambient environment particles."""
-        p.setPen(Qt.PenStyle.NoPen)
-        for ep in self._env_particles:
-            ep["x"] = (ep["x"] + ep["vx"]) % 1.0
-            ep["y"] = (ep["y"] + ep["vy"]) % 1.0
-            if ep["y"] < 0:
-                ep["y"] = 1.0
-            px_x = ep["x"] * W
-            px_y = ep["y"] * H
-            sz = ep["sz"] * (1.0 + amp * 0.5)
-            a = int(ep["alpha"] * (180 + amp * 60))
-            if ep["color"] == "gold":
-                col = QColor(255, 200, 80, a)
-            elif ep["color"] == "cyan":
-                col = QColor(0, 200, 255, a)
-            else:
-                col = QColor(30, 80, 200, a)
-            p.setBrush(QBrush(col))
-            p.drawEllipse(QRectF(px_x - sz / 2, px_y - sz / 2, sz, sz))
+    def _make_grid(self, W: int, H: int) -> QPixmap:
+        pm = QPixmap(max(1, W), max(1, H))
+        pm.fill(Qt.GlobalColor.transparent)
+        gp = QPainter(pm)
+        gp.setPen(QPen(qcol(C.PRI_GHO, 70), 1))
+        for x in range(0, W, 40):
+            for y in range(0, H, 40):
+                gp.drawPoint(x, y)
+        gp.end()
+        return pm
 
     def _step(self):
         self._tick += 1
+        now = time.time()
+
+        # Decay audio amplitude towards silence
         self._live_amp *= 0.88
-        self._amp_disp += (self._live_amp - self._amp_disp) * 0.35
-        self.update()
+        self._amp_disp += (self._live_amp - self._amp_disp) * 0.42
+        amp = self._amp_disp
 
-    def _status_text(self) -> str:
-        if self.muted:
-            return "MICROPHONE MUTED"
-        st = (self.state or "").upper()
-        if self.speaking or st == "SPEAKING":
-            return "SPEAKING..."
-        if st in ("THINKING", "PROCESSING", "ANALYZING", "ANALYSING"):
-            return "PROCESSING..."
-        if st == "LISTENING":
-            return "LISTENING..."
-        return "IDLE"
-
-    def _draw_energy_columns(self, p: QPainter, W: int, H: int, amp: float, active: bool) -> None:
-        """Draw framing side telemetry rails strictly within panel boundaries."""
-        cols = 16
-        top = max(40, int(H * 0.10))
-        bottom = max(top + 80, int(H * 0.72))
-        span = bottom - top
-        base_alpha = 115 if active else 50
-        for side in (-1, 1):
-            rail_x = 28 if side < 0 else W - 28
-            p.setPen(QPen(QColor(255, 179, 0, 32), 1))
-            p.drawLine(QPointF(rail_x, top), QPointF(rail_x, bottom))
-            for i in range(cols):
-                y = top + (i / max(1, cols - 1)) * span
-                phase = self._tick * 0.11 + i * 0.55 + (0.7 if side > 0 else 0.0)
-                energy = 0.25 + 0.75 * abs(math.sin(phase))
-                length = (14 + energy * 26 + amp * 30) * side
-                col = QColor("#ffb300" if i % 3 else "#ffe277")
-                col.setAlpha(base_alpha + int(65 * energy))
-                p.setPen(QPen(col, 1.2))
-                p.drawLine(QPointF(rail_x, y), QPointF(rail_x + length, y))
-
-    def _draw_platform(self, p: QPainter, cx: float, plat_y: float, base_r: float, amp: float, active: bool) -> None:
-        """Draw concentric glowing holographic elliptical pedestal projector."""
-        pw = base_r * 1.55
-        ph = pw * 0.24
-
-        # Ambient floor glow
-        floor_glow = QRadialGradient(cx, plat_y, pw * 0.9)
-        floor_glow.setColorAt(0.0, QColor(255, 170, 0, 75 + int(amp * 60)))
-        floor_glow.setColorAt(0.45, QColor(0, 180, 255, 25))
-        floor_glow.setColorAt(1.0, QColor(0, 0, 0, 0))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(floor_glow))
-        p.drawEllipse(QRectF(cx - pw * 0.9, plat_y - ph * 1.6, pw * 1.8, ph * 3.2))
-
-        # Concentric pedestal rings
-        for idx, scale in enumerate([1.0, 0.78, 0.55, 0.32]):
-            rw = pw * scale
-            rh = ph * scale
-            ring_col = QColor("#ffe277" if idx % 2 == 0 else "#00d4ff")
-            ring_col.setAlpha(80 + int(amp * 80) if active else 45 + idx * 10)
-            pen = QPen(ring_col, 1.3 if idx == 0 else 1.0)
-            if idx == 1:
-                pen.setDashPattern([3, 5])
-            p.setPen(pen)
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(QRectF(cx - rw, plat_y - rh, rw * 2, rh * 2))
-
-        # Vertical projector light filaments rising into core
-        p.setPen(Qt.PenStyle.NoPen)
-        for i in range(7):
-            t = (i - 3) / 3.0
-            beam_x = cx + t * pw * 0.58
-            beam_w = 2.0 + abs(t) * 1.5
-            grad = QLinearGradient(beam_x, plat_y, beam_x, plat_y - base_r * 0.9)
-            grad.setColorAt(0.0, QColor(255, 214, 92, 90 + int(amp * 70)))
-            grad.setColorAt(0.6, QColor(255, 153, 0, 30))
-            grad.setColorAt(1.0, QColor(255, 153, 0, 0))
-            p.fillRect(QRectF(beam_x - beam_w / 2, plat_y - base_r * 0.9, beam_w, base_r * 0.9), QBrush(grad))
-
-    def _draw_orbital_rings(self, p: QPainter, cx: float, cy: float, base_r: float, amp: float, active: bool, processing: bool) -> None:
-        """Draw dynamic 3D gimbal orbital rings with traveling energy nodes."""
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        speed_mult = 2.4 if processing else (1.6 if active else 1.0)
-
-        ring_configs = [
-            (1.18, 0.46, 18, 0.016, "#ffd76a", None),
-            (1.06, 0.38, -32, -0.020, "#ffb800", [4, 6]),
-            (1.28, 0.58, 62, 0.012, "#00e5ff", None),
-            (1.36, 0.30, -8, 0.024, "#ffe599", [2, 8])
-        ]
-
-        for idx, (sx, sy, tilt_deg, spd, col_hex, dash) in enumerate(ring_configs):
-            rr_x = base_r * sx * (1.0 + amp * 0.06)
-            rr_y = base_r * sy * (1.0 + amp * 0.06)
-            angle = (self._tick * spd * speed_mult) % math.tau
-
-            p.save()
-            p.translate(cx, cy)
-            p.rotate(tilt_deg)
-
-            col = QColor(col_hex)
-            col.setAlpha(95 + int(amp * 110) if active else 55 + idx * 12)
-            pen = QPen(col, 1.4 if idx == 0 else 1.1)
-            if dash:
-                pen.setDashPattern(dash)
-            p.setPen(pen)
-            p.drawEllipse(QRectF(-rr_x, -rr_y, rr_x * 2, rr_y * 2))
-
-            node_x = math.cos(angle) * rr_x
-            node_y = math.sin(angle) * rr_y
-
-            node_glow = QColor(255, 245, 190, 220)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QBrush(node_glow))
-            p.drawEllipse(QRectF(node_x - 3.0, node_y - 3.0, 6.0, 6.0))
-
-            for s in range(1, 5):
-                tail_a = angle - s * 0.08 * (1 if spd > 0 else -1)
-                tx = math.cos(tail_a) * rr_x
-                ty = math.sin(tail_a) * rr_y
-                col_tail = QColor(col_hex)
-                col_tail.setAlpha(max(0, 160 - s * 38))
-                p.setBrush(QBrush(col_tail))
-                p.drawEllipse(QRectF(tx - 2.0, ty - 2.0, 4.0, 4.0))
-
-            p.restore()
-
-    def _draw_particles(self, p: QPainter, cx: float, cy: float, base_r: float, amp: float, active: bool, processing: bool) -> None:
-        """Draw dense 3D volumetric particle swarm with perspective projection."""
-        p.setPen(Qt.PenStyle.NoPen)
-        speed_mult = 2.2 if processing else (1.5 if active else 1.0)
-
-        for pt in self._particles:
-            pt["theta"] = (pt["theta"] + pt["dtheta"] * speed_mult) % math.tau
-            pt["phi"] = math.sin(self._tick * pt["dphi"] * speed_mult) * (math.pi * 0.42)
-
-            r_eff = base_r * pt["r"] * (1.0 + amp * 0.16)
-            x3 = r_eff * math.cos(pt["phi"]) * math.sin(pt["theta"])
-            y3 = r_eff * math.sin(pt["phi"])
-            z3 = r_eff * math.cos(pt["phi"]) * math.cos(pt["theta"])
-
-            pitch = 0.38
-            yp = y3 * math.cos(pitch) - z3 * math.sin(pitch)
-            zp = y3 * math.sin(pitch) + z3 * math.cos(pitch)
-
-            fov = 400.0
-            scale = fov / (fov + zp)
-            screen_x = cx + x3 * scale
-            screen_y = cy + yp * scale
-
-            depth_f = (zp + base_r * 1.3) / (base_r * 2.6)
-            depth_f = max(0.0, min(1.0, depth_f))
-
-            sz = pt["sz"] * scale * (0.8 + 0.4 * depth_f)
-            alpha = int(pt["alpha"] * (40 + 190 * depth_f + amp * 45))
-            alpha = max(15, min(255, alpha))
-
-            if pt["color_type"] == "gold":
-                col = QColor(255, 215, 100, alpha)
-            elif pt["color_type"] == "amber":
-                col = QColor(255, 150, 20, alpha)
-            elif pt["color_type"] == "cyan":
-                col = QColor(0, 220, 255, alpha)
+        # Dynamic breathing target
+        if now - self._last_t > (0.10 if self.speaking else 0.45):
+            if self.speaking:
+                self._base_scale = 1.05
+                self._base_halo  = 130.0
+            elif self.muted:
+                self._base_scale = random.uniform(0.995, 1.002)
+                self._base_halo  = random.uniform(20, 32)
             else:
-                col = QColor(255, 255, 255, alpha)
+                self._base_scale = random.uniform(1.002, 1.012)
+                self._base_halo  = random.uniform(55, 75)
+            self._last_t = now
 
-            p.setBrush(QBrush(col))
-            p.drawEllipse(QRectF(screen_x - sz / 2, screen_y - sz / 2, sz, sz))
-
-    def _draw_processing_hud(self, p: QPainter, cx: float, cy: float, base_r: float, amp: float) -> None:
-        """Draw laser scan sweep and rotating HUD reticles during processing."""
-        scan_offset = math.sin(self._tick * 0.08)
-        scan_y = cy + scan_offset * base_r * 0.82
-        scan_w = base_r * math.sqrt(max(0.1, 1.0 - (scan_offset * 0.82) ** 2)) * 1.9
-
-        laser_col = QColor(255, 235, 140, 210)
-        p.setPen(QPen(laser_col, 1.6))
-        p.drawLine(QPointF(cx - scan_w, scan_y), QPointF(cx + scan_w, scan_y))
-
-        curt_h = 24.0 * (1 if scan_offset >= 0 else -1)
-        curt_grad = QLinearGradient(cx, scan_y, cx, scan_y - curt_h)
-        curt_grad.setColorAt(0.0, QColor(255, 180, 0, 70))
-        curt_grad.setColorAt(1.0, QColor(255, 180, 0, 0))
-        p.fillRect(QRectF(cx - scan_w, min(scan_y, scan_y - curt_h), scan_w * 2, abs(curt_h)), QBrush(curt_grad))
-
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.setPen(QPen(QColor(0, 212, 255, 130), 1.2))
-        t_ang = (self._tick * 1.5) % 360
-        for b_ang in [t_ang, t_ang + 90, t_ang + 180, t_ang + 270]:
-            p.save()
-            p.translate(cx, cy)
-            p.rotate(b_ang)
-            rad = base_r * 1.12
-            p.drawLine(QPointF(rad - 12, 0), QPointF(rad, 0))
-            p.drawLine(QPointF(rad, 0), QPointF(rad, 12))
-            p.restore()
-
-    def _draw_holographic_globe(
-        self, p: QPainter, cx: float, cy: float, base_r: float, amp: float, active: bool, processing: bool
-    ) -> None:
-        """
-        Draw the large procedural golden holographic globe.
-        Renders: volumetric inner glow, lat/lon sphere grid, fragmented geometry,
-        dynamic circuit traces, concentric rings, JARVIS text, radial scan effects.
-        """
-        t     = self._tick
-        speed = 2.0 if processing else (1.4 if active else 0.8)
-        rot   = t * 0.008 * speed
-        breath = math.sin(t * 0.05) * 0.025
-        R = base_r * (1.0 + breath + amp * 0.07)
-
-        # ── Layer 1: Deep inner volumetric golden core glow ──────────────────
-        core_glow = QRadialGradient(cx, cy, R * 0.62)
-        core_glow.setColorAt(0.00, QColor(255, 240, 160, int(200 + amp * 55)))
-        core_glow.setColorAt(0.18, QColor(255, 200, 60, int(160 + amp * 50)))
-        core_glow.setColorAt(0.40, QColor(255, 150, 10, int(90 + amp * 40)))
-        core_glow.setColorAt(0.70, QColor(200, 90, 0, int(40 + amp * 25)))
-        core_glow.setColorAt(1.00, QColor(0, 0, 0, 0))
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(core_glow))
-        p.drawEllipse(QRectF(cx - R * 0.62, cy - R * 0.62, R * 1.24, R * 1.24))
-
-        # ── Layer 2: Outer volumetric glow halo ─────────────────────────────
-        outer_glow = QRadialGradient(cx, cy, R * 1.18)
-        outer_glow.setColorAt(0.0, QColor(255, 180, 20, int(55 + amp * 40)))
-        outer_glow.setColorAt(0.5, QColor(255, 120, 0, int(22 + amp * 20)))
-        outer_glow.setColorAt(0.80, QColor(0, 80, 200, 12))
-        outer_glow.setColorAt(1.0, QColor(0, 0, 0, 0))
-        p.setBrush(QBrush(outer_glow))
-        p.drawEllipse(QRectF(cx - R * 1.18, cy - R * 1.18, R * 2.36, R * 2.36))
-
-        # ── Layer 3: Latitude lines (horizontal circles as ellipses) ──────────
-        lat_count = 9
-        lat_alpha_base = 90 + int(amp * 60) if active else 55
-        for i in range(lat_count):
-            phi = -math.pi / 2 + (i + 1) * math.pi / (lat_count + 1)
-            r_circle = R * math.cos(phi)
-            y_offset = R * math.sin(phi)
-            ell_w = r_circle * 2.0
-            ell_h = r_circle * 0.38
-            ex = cx - r_circle
-            ey = cy + y_offset - ell_h / 2
-            depth_f = (math.cos(phi) + 1.0) * 0.5
-            alpha = int(lat_alpha_base * (0.30 + 0.70 * depth_f))
-            col = QColor(255, 200, 60, max(8, alpha))
-            p.setPen(QPen(col, 0.8 if i != lat_count // 2 else 1.2))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(QRectF(ex, ey, ell_w, ell_h))
-
-        # ── Layer 4: Longitude lines (vertical great-circle arcs as tilted ellipses) ─
-        lon_count = 12
-        lon_alpha = 75 + int(amp * 55) if active else 45
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        for j in range(lon_count):
-            lon_angle = rot + j * math.pi / lon_count
-            facing = abs(math.cos(lon_angle)) * 0.7 + 0.3
-            a = int(lon_alpha * facing)
-            col = QColor(255, 180, 40, max(8, a))
-            p.setPen(QPen(col, 0.7))
-            p.save()
-            p.translate(cx, cy)
-            p.rotate(math.degrees(lon_angle))
-            p.drawEllipse(QRectF(-R * 0.19, -R, R * 0.38, R * 2))
-            p.restore()
-
-        # ── Layer 5: Globe boundary ring ─────────────────────────────────
-        globe_pen_col = QColor(255, 210, 80, 160 + int(amp * 80))
-        p.setPen(QPen(globe_pen_col, 2.0 + amp * 0.8))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(QRectF(cx - R, cy - R, R * 2, R * 2))
-        glow_ring_col = QColor(255, 240, 140, 50 + int(amp * 40))
-        p.setPen(QPen(glow_ring_col, 6.0 + amp * 2.0))
-        p.drawEllipse(QRectF(cx - R, cy - R, R * 2, R * 2))
-
-        # ── Layer 6: Fragmented golden geometry patches ─────────────────────
-        self._draw_globe_geometry(p, cx, cy, R, rot, amp, active)
-
-        # ── Layer 7: Dynamic circuit traces ───────────────────────────────
-        self._draw_circuit_traces(p, cx, cy, R, rot, amp, active)
-
-        # ── Layer 8: Inner concentric glow rings ──────────────────────────
-        for ring_f in [0.25, 0.50, 0.72, 0.90]:
-            rr = R * ring_f
-            ring_alpha = int((80 - ring_f * 55) + amp * 35)
-            rc = QColor(255, 220, 100, max(5, ring_alpha))
-            p.setPen(QPen(rc, 0.6))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(QRectF(cx - rr, cy - rr, rr * 2, rr * 2))
-
-        # ── Layer 9: Radial scanning glow effect ──────────────────────────
-        scan_angle = (t * 0.022 * speed) % math.tau
-        scan_len = R * (0.85 + amp * 0.15)
-        for i in range(3):
-            sa = scan_angle + i * (math.tau / 3)
-            sx = cx + math.cos(sa) * scan_len
-            sy = cy + math.sin(sa) * scan_len
-            scan_col = QColor(255, 220, 80, max(0, 60 - int(i * 20)))
-            p.setPen(QPen(scan_col, 1.0))
-            p.drawLine(QPointF(cx, cy), QPointF(sx, sy))
-
-        # ── Layer 10: Scanning node particles on surface ───────────────────
-        p.setPen(Qt.PenStyle.NoPen)
-        for ni in range(6):
-            na = (t * 0.015 * speed + ni * math.tau / 6) % math.tau
-            np_phi = math.sin(t * 0.011 + ni * 1.1) * math.pi * 0.4
-            nx = cx + R * 0.92 * math.cos(np_phi) * math.cos(na)
-            ny = cy + R * 0.92 * math.sin(np_phi)
-            depth_sc = 0.5 + 0.5 * math.cos(na - rot)
-            node_a = int(180 * depth_sc + amp * 60)
-            node_sz = 2.5 + amp * 1.5 + 2.0 * depth_sc
-            p.setBrush(QBrush(QColor(255, 250, 200, max(20, node_a))))
-            p.drawEllipse(QRectF(nx - node_sz / 2, ny - node_sz / 2, node_sz, node_sz))
-
-        # ── Layer 11: JARVIS text at globe center ─────────────────────────
-        self._draw_globe_jarvis_text(p, cx, cy, R, amp, active)
-
-    def _draw_globe_geometry(
-        self, p: QPainter, cx: float, cy: float, R: float, rot: float, amp: float, active: bool
-    ) -> None:
-        """Draw fragmented golden geometry patches on the globe surface."""
-        t = self._tick
-        p.setPen(Qt.PenStyle.NoPen)
-        geo_configs = [
-            (0.22, 0.15, 0.018, 0.55), (-0.35, 0.28, -0.014, 0.45),
-            (0.55, -0.12, 0.021, 0.50), (-0.18, -0.40, 0.016, 0.60),
-            (0.40, 0.38, -0.019, 0.42), (-0.50, 0.08, 0.013, 0.52),
-            (0.10, 0.45, 0.017, 0.48), (-0.28, -0.18, -0.022, 0.58),
-        ]
-        for gx_f, gy_f, spd, intensity in geo_configs:
-            angle = rot + t * spd
-            phi = math.asin(max(-1, min(1, gy_f)))
-            theta = math.acos(max(-1, min(1, gx_f))) + angle
-            x3 = R * math.cos(phi) * math.cos(theta)
-            y3 = R * math.sin(phi)
-            z3 = R * math.cos(phi) * math.sin(theta)
-            if z3 > -R * 0.1:
-                depth_f = (z3 + R) / (2 * R)
-                sz = R * (0.08 + 0.04 * intensity) * (0.5 + 0.5 * depth_f)
-                a = int(intensity * (90 + amp * 55) * depth_f)
-                a = max(8, min(180, a))
-                p.setBrush(QBrush(QColor(255, 210, 60, a)))
-                p.drawEllipse(QRectF(cx + x3 - sz / 2, cy + y3 - sz / 2, sz, sz))
-                node_sz = sz * 0.35
-                p.setBrush(QBrush(QColor(255, 245, 190, min(255, a + 60))))
-                p.drawEllipse(QRectF(cx + x3 - node_sz / 2, cy + y3 - node_sz / 2, node_sz, node_sz))
-
-    def _draw_circuit_traces(
-        self, p: QPainter, cx: float, cy: float, R: float, rot: float, amp: float, active: bool
-    ) -> None:
-        """Draw dynamic circuit traces / energy streams on globe surface."""
-        t = self._tick
-        trace_alpha = 100 + int(amp * 80) if active else 60
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        for seed in self._circuit_seeds:
-            angle = rot + seed["phase"] + t * 0.009
-            phi0  = seed["phi0"] + math.sin(t * 0.007 + seed["phase"]) * 0.3
-            seg_n = seed["len"]
-            pts = []
-            theta_step = 0.18
-            phi_step   = 0.12
-            for k in range(seg_n):
-                theta = angle + k * theta_step
-                phi   = phi0 + k * phi_step * math.sin(t * 0.005 + k * 0.4)
-                phi   = max(-math.pi * 0.46, min(math.pi * 0.46, phi))
-                x3 = R * math.cos(phi) * math.cos(theta)
-                y3 = R * math.sin(phi)
-                z3 = R * math.cos(phi) * math.sin(theta)
-                if z3 > -R * 0.05:
-                    depth = (z3 + R) / (2 * R)
-                    pts.append((cx + x3, cy + y3, depth))
-            if len(pts) >= 2:
-                for i in range(len(pts) - 1):
-                    x1, y1, d1 = pts[i]
-                    x2, y2, d2 = pts[i + 1]
-                    avg_d = (d1 + d2) * 0.5
-                    a = int(trace_alpha * avg_d)
-                    col = QColor(255, 200, 60, max(8, a))
-                    p.setPen(QPen(col, 0.9))
-                    p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
-                    if i % 2 == 0:
-                        p.setPen(Qt.PenStyle.NoPen)
-                        p.setBrush(QBrush(QColor(255, 240, 160, max(15, int(a * 1.4)))))
-                        p.drawEllipse(QRectF(x1 - 1.8, y1 - 1.8, 3.6, 3.6))
-                        p.setBrush(Qt.BrushStyle.NoBrush)
-
-    def _draw_globe_jarvis_text(
-        self, p: QPainter, cx: float, cy: float, R: float, amp: float, active: bool
-    ) -> None:
-        """Draw 'JARVIS' text subtly at the center of the globe."""
-        t = self._tick
-        pulse = 0.72 + 0.28 * math.sin(t * 0.06)
-        font_sz = max(10, int(R * 0.155))
-        font = QFont("Courier New", font_sz, QFont.Weight.Bold)
-        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, font_sz * 0.55)
-        p.setFont(font)
-        base_a = int((160 + amp * 70) * pulse)
-        for blur_r in [14, 9, 5, 0]:
-            if blur_r > 0:
-                a = max(8, int(base_a * (0.15 * (14 - blur_r) / 14)))
-                col = QColor(255, 230, 120, a)
-            else:
-                a = max(80, min(255, base_a))
-                col = QColor(255, 245, 190, a)
-            p.setPen(QPen(col, 1))
-            text_rect = QRectF(cx - R * 0.55, cy - R * 0.12, R * 1.1, R * 0.25)
-            p.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "JARVIS")
-
-    def mouseMoveEvent(self, e) -> None:
-        if self._dest_rect is not None:
-            sy = self._dest_rect.top() + self._dest_rect.height() * (545.0 / 610.0)
-            cx = self.width() / 2.0
-            mic_r = self._dest_rect.width() * (28.0 / 630.0)
-            if math.hypot(e.pos().x() - cx, e.pos().y() - sy) <= mic_r * 1.3:
-                self.setCursor(Qt.CursorShape.PointingHandCursor)
-                return
-        self.setCursor(Qt.CursorShape.ArrowCursor)
-
-    def mousePressEvent(self, e) -> None:
-        if e.button() == Qt.MouseButton.LeftButton and self._dest_rect is not None:
-            sy = self._dest_rect.top() + self._dest_rect.height() * (545.0 / 610.0)
-            cx = self.width() / 2.0
-            mic_r = self._dest_rect.width() * (28.0 / 630.0)
-            if math.hypot(e.pos().x() - cx, e.pos().y() - sy) <= mic_r * 1.3:
-                win = self.window()
-                if hasattr(win, "_toggle_mute"):
-                    win._toggle_mute()
-                else:
-                    self.muted = not self.muted
-                    self.update()
-                return
-        super().mousePressEvent(e)
-
-    def _draw_microphone_control(
-        self, p: QPainter, cx: float, sy: float, dest_rect: QRectF, amp: float, active: bool
-    ) -> None:
-        """Draw interactive central microphone button control on the pedestal."""
-        mic_r = dest_rect.width() * (26.0 / 630.0)
-
-        glow_r = mic_r * (1.3 + amp * 0.45)
-        glow = QRadialGradient(cx, sy, glow_r)
+        # Live audio amplitude lifts target scale & glow halo
         if self.muted:
-            glow.setColorAt(0.0, QColor(255, 68, 85, int(90 + amp * 80)))
-            glow.setColorAt(0.6, QColor(180, 20, 40, 35))
-            glow.setColorAt(1.0, QColor(0, 0, 0, 0))
-        elif self.state == "LISTENING":
-            glow.setColorAt(0.0, QColor(0, 229, 255, int(95 + amp * 90)))
-            glow.setColorAt(0.6, QColor(0, 140, 220, 40))
-            glow.setColorAt(1.0, QColor(0, 0, 0, 0))
+            self._tgt_scale, self._tgt_halo = self._base_scale, self._base_halo
+        elif self.speaking:
+            self._tgt_scale = self._base_scale + amp * 0.16
+            self._tgt_halo  = self._base_halo  + amp * 110.0
         else:
-            glow.setColorAt(0.0, QColor(255, 235, 120, int(85 + amp * 90)))
-            glow.setColorAt(0.6, QColor(255, 170, 0, int(40 + amp * 50)))
-            glow.setColorAt(1.0, QColor(0, 0, 0, 0))
+            self._tgt_scale = self._base_scale + amp * 0.08
+            self._tgt_halo  = self._base_halo  + amp * 80.0
 
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(glow))
-        p.drawEllipse(QRectF(cx - glow_r, sy - glow_r, glow_r * 2, glow_r * 2))
+        sp = 0.38 if self.speaking else (0.30 if amp > 0.02 else 0.16)
+        self._scale += (self._tgt_scale - self._scale) * sp
+        self._halo  += (self._tgt_halo  - self._halo)  * sp
 
-        p.setBrush(QBrush(QColor("#030d18")))
-        ring_col = QColor("#ff4455" if self.muted else ("#00e5ff" if self.state == "LISTENING" else "#ffb800"))
-        ring_col.setAlpha(220 if active else 140)
-        p.setPen(QPen(ring_col, 1.4))
-        p.drawEllipse(QRectF(cx - mic_r, sy - mic_r, mic_r * 2, mic_r * 2))
+        # 3D Sphere rotations
+        rot_spd = (0.038 if self.speaking else (0.028 if amp > 0.05 else 0.015)) * (1.0 + amp * 1.8)
+        self._yaw = (self._yaw + rot_spd) % (2 * math.pi)
+        self._pitch = 0.35 + 0.08 * math.sin(self._tick * 0.025)
+        self._roll  = 0.04 * math.sin(self._tick * 0.018)
 
-        mic_px = IconManager.get_pixmap("mic_active", int(mic_r * 1.35))
-        if mic_px and not mic_px.isNull():
-            p.drawPixmap(int(cx - mic_r * 0.675), int(sy - mic_r * 0.675), mic_px)
+        # Orbital gimbal rings
+        boost = 1.0 + amp * 2.0
+        self._orbit_angles[0] = (self._orbit_angles[0] + (2.2 if self.speaking else 1.0) * boost) % 360
+        self._orbit_angles[1] = (self._orbit_angles[1] - (1.7 if self.speaking else 0.7) * boost) % 360
+        self._orbit_angles[2] = (self._orbit_angles[2] + (2.8 if self.speaking else 1.3) * boost) % 360
+        self._orbit_angles[3] = (self._orbit_angles[3] - (1.2 if self.speaking else 0.5) * boost) % 360
 
-    def _draw_real_ui_text(
-        self, p: QPainter, cx: float, core_y: float, sy: float, base_r: float, amp: float, active: bool
-    ) -> None:
-        """Draw real UI typography for 'JARVIS' and dynamic application status."""
-        st = self._status_text()
+        self._scan  = (self._scan  + (3.5 if self.speaking else 1.4) * boost) % 360
+        self._scan2 = (self._scan2 - (2.4 if self.speaking else 0.9) * boost) % 360
 
-        status_y = sy + base_r * 0.14
-        font_status = QFont("Courier New", int(max(9, min(11, base_r * 0.055))), QFont.Weight.Bold)
-        p.setFont(font_status)
+        # Outer expanding pulse rings
+        fw  = min(self.width(), self.height())
+        lim = fw * 0.78
+        pspd = 4.5 if self.speaking else 2.2
+        self._pulses = [r + pspd for r in self._pulses if r + pspd < lim]
+        if len(self._pulses) < 4 and random.random() < (0.08 if self.speaking else 0.028):
+            self._pulses.append(0.0)
 
-        if self.muted:
-            st_col = QColor("#ff4455")
-        elif st == "LISTENING...":
-            st_col = QColor("#00e5ff")
-        elif st == "SPEAKING...":
-            st_col = QColor("#ffbb00")
-        elif st == "PROCESSING...":
-            st_col = QColor("#00d4ff")
+        # Ambient floating particle updates
+        for p in self._ambient_particles:
+            p[0] = (p[0] + p[3] * (1.5 if self.speaking else 1.0)) % (2 * math.pi)
+            p[5] = (p[5] + 0.04) % (2 * math.pi)
+
+        # Audio burst particles when speaking or receiving voice input
+        if (self.speaking or amp > 0.04) and random.random() < (0.45 if self.speaking else 0.25):
+            cx, cy = self.width() / 2, self.height() / 2
+            ang = random.uniform(0, 2 * math.pi)
+            r_s = fw * 0.26 * self._scale
+            spd_val = random.uniform(1.2, 3.6) + amp * 3.5
+            self._burst_particles.append([
+                cx + math.cos(ang) * r_s,
+                cy + math.sin(ang) * r_s,
+                math.cos(ang) * spd_val,
+                math.sin(ang) * spd_val,
+                1.0,                           # life
+                random.uniform(0.02, 0.04),    # decay rate
+                random.uniform(1.5, 3.8),      # size
+                random.choice([0, 1, 2])       # color: 0=gold, 1=amber, 2=hot-white
+            ])
+
+        # Step and clean up burst particles
+        alive_burst = []
+        for p in self._burst_particles:
+            p[0] += p[2]
+            p[1] += p[3]
+            p[2] *= 0.96
+            p[3] *= 0.96
+            p[4] -= p[5]
+            if p[4] > 0:
+                alive_burst.append(p)
+        self._burst_particles = alive_burst
+
+        # Blink flag
+        self._blink_tick += 1
+        if self._blink_tick >= 36:
+            self._blink = not self._blink
+            self._blink_tick = 0
+            _blinked = True
         else:
-            st_col = QColor("#ffe277")
+            _blinked = False
 
-        st_text = f"◈  {st}  ◈"
-        fm = p.fontMetrics()
-        txt_w = fm.horizontalAdvance(st_text) + 24
-        badge_rect = QRectF(cx - txt_w / 2, status_y - 9, txt_w, 18)
-
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QBrush(QColor(0, 5, 12, 160)))
-        p.drawRoundedRect(badge_rect, 9, 9)
-
-        p.setPen(QPen(QColor(st_col.red(), st_col.green(), st_col.blue(), 130), 1))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(badge_rect, 9, 9)
-
-        p.setPen(QPen(st_col, 1))
-        p.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, st_text)
+        # Throttled repaint
+        self._paint_tick = (self._paint_tick + 1) % 3
+        active = (self.speaking or amp > 0.02 or self.state in ("THINKING", "PROCESSING", "LISTENING"))
+        if active or _blinked or self._paint_tick == 0:
+            self.update()
 
     def paintEvent(self, _):
         p = QPainter(self)
         if not p.isActive():
             return
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
         W, H = self.width(), self.height()
-        cx = W / 2.0
+        cx, cy = W / 2, H / 2
+        fw = min(W, H)
         amp = self._amp_disp
-        st = self._status_text()
-        speaking = self.speaking or st == "SPEAKING..."
-        processing = st == "PROCESSING..."
-        active = speaking or processing or st == "LISTENING..."
 
-        # ── 1. Cinematic procedural environment (background) ────────────────
-        self._draw_environment(p, W, H, amp, active)
+        # Background — deep sci-fi navy obsidian
+        p.fillRect(self.rect(), QColor("#01060e"))
 
-        # ── 2. Framing HUD border and corner markers ──────────────────────
-        border_col = QColor("#1a5c7a")
-        border_col.setAlpha(120)
-        p.setPen(QPen(border_col, 1))
+        # Cached grid dots
+        _gkey = (W, H, C.PRI_GHO)
+        if self._grid_cache is None or self._grid_key != _gkey:
+            self._grid_cache = self._make_grid(W, H)
+            self._grid_key   = _gkey
+        p.drawPixmap(0, 0, self._grid_cache)
+
+        # ── COLOR DEFINITIONS (GOLDEN-AMBER HOLOGRAPHIC SUITE) ──────────────────
+        if self.muted:
+            c_hot    = QColor("#ffcccc")
+            c_bright = QColor("#ff4466")
+            c_main   = QColor("#cc1133")
+            c_warm   = QColor("#880011")
+            c_deep   = QColor("#440008")
+            c_cyan   = QColor("#ff6688")
+        else:
+            c_hot    = QColor("#fffdf2")   # Hot white-gold
+            c_bright = QColor("#ffe277")   # 24K Radiant gold
+            c_main   = QColor("#ffb300")   # Golden amber
+            c_warm   = QColor("#ff7700")   # Solar orange-amber
+            c_deep   = QColor("#b34400")   # Deep bronze-amber
+            c_cyan   = QColor("#00d4ff")   # Secondary telemetry cyan
+
+        # ── 1. OUTER HUD RETICLE & TECHNICAL TELEMETRY ─────────────────────────
+        # Corner Targeting Brackets
+        bl = 26
+        bc = QColor(c_main); bc.setAlpha(120)
+        hl, hr = cx - fw * 0.46, cx + fw * 0.46
+        ht, hb = cy - fw * 0.46, cy + fw * 0.46
+        p.setPen(QPen(bc, 1.5))
+        for bx, by, dx, dy in [(hl,ht,1,1),(hr,ht,-1,1),(hl,hb,1,-1),(hr,hb,-1,-1)]:
+            p.drawLine(QPointF(bx, by), QPointF(bx + dx * bl, by))
+            p.drawLine(QPointF(bx, by), QPointF(bx, by + dy * bl))
+
+        # Concentric guide circles
+        for r_frac, a_val, stroke_w in [(0.47, 45, 1.0), (0.42, 35, 1.0), (0.36, 50, 1.0)]:
+            r_c = fw * r_frac
+            col = QColor(c_main); col.setAlpha(a_val)
+            p.setPen(QPen(col, stroke_w, Qt.PenStyle.DotLine))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QRectF(cx - r_c, cy - r_c, r_c * 2, r_c * 2))
+
+        # Vernier Compass Circular Ticks (360 degrees)
+        r_tick_out = fw * 0.465
+        r_tick_in  = fw * 0.450
+        r_tick_maj = fw * 0.440
+        for deg in range(0, 360, 5):
+            rad = math.radians(deg)
+            is_maj = (deg % 30 == 0)
+            is_med = (deg % 15 == 0)
+            inn = r_tick_maj if is_maj else (r_tick_in if is_med else r_tick_in + 2)
+            alpha_tick = 160 if is_maj else (100 if is_med else 45)
+            col_tick = QColor(c_bright if is_maj else (c_cyan if is_med else c_main))
+            col_tick.setAlpha(alpha_tick)
+            p.setPen(QPen(col_tick, 1.5 if is_maj else 1.0))
+            p.drawLine(
+                QPointF(cx + r_tick_out * math.cos(rad), cy - r_tick_out * math.sin(rad)),
+                QPointF(cx + inn * math.cos(rad), cy - inn * math.sin(rad))
+            )
+
+        # Rotating Outer Scanning Arcs
+        r_scan_a = fw * 0.455
+        sa1 = min(255, int(self._halo * 1.4))
+        p.setPen(QPen(QColor(c_main.red(), c_main.green(), c_main.blue(), sa1), 2.0))
+        p.drawArc(QRectF(cx - r_scan_a, cy - r_scan_a, r_scan_a * 2, r_scan_a * 2),
+                  int(self._scan * 16), int((85 if self.speaking else 55) * 16))
+        p.setPen(QPen(QColor(c_cyan.red(), c_cyan.green(), c_cyan.blue(), sa1 // 2), 1.5))
+        p.drawArc(QRectF(cx - r_scan_a, cy - r_scan_a, r_scan_a * 2, r_scan_a * 2),
+                  int(self._scan2 * 16), int((70 if self.speaking else 40) * 16))
+
+        # Telemetry Labels
+        p.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        p.setPen(QPen(QColor(c_bright.red(), c_bright.green(), c_bright.blue(), 130), 1))
+        p.drawText(QRectF(cx - fw * 0.45, cy - fw * 0.45, 120, 14), Qt.AlignmentFlag.AlignLeft, "◈ AI CORE // ONLINE")
+        p.drawText(QRectF(cx + fw * 0.45 - 120, cy - fw * 0.45, 120, 14), Qt.AlignmentFlag.AlignRight, "HOLO MATRIX v4.2")
+        p.drawText(QRectF(cx - fw * 0.45, cy + fw * 0.43, 120, 14), Qt.AlignmentFlag.AlignLeft, "QUANTUM SYNC // LOCK")
+        p.drawText(QRectF(cx + fw * 0.45 - 120, cy + fw * 0.43, 120, 14), Qt.AlignmentFlag.AlignRight, f"FLUX // {int(98.5 + amp*1.4)}%")
+
+        # ── 1B. FLOATING HOLOGRAPHIC DATA SCREENS (SIDE WINGS) ────────────────
+        if fw > 360:
+            # 1. Top-Left Floating Screen: Flat 2D World Map Projection
+            scr_w, scr_h = 110, 75
+            scr_lx = cx - fw * 0.46
+            scr_ly = cy - fw * 0.36
+
+            p.setBrush(QBrush(QColor(2, 10, 18, 160)))
+            p.setPen(QPen(QColor(c_cyan.red(), c_cyan.green(), c_cyan.blue(), 100), 1))
+            p.drawRoundedRect(QRectF(scr_lx, scr_ly, scr_w, scr_h), 4, 4)
+
+            p.setFont(QFont("Courier New", 5, QFont.Weight.Bold))
+            p.setPen(QPen(c_cyan, 1))
+            p.drawText(QRectF(scr_lx + 4, scr_ly + 3, scr_w - 8, 10), Qt.AlignmentFlag.AlignLeft, "◈ WORLD MAP // GLOBAL")
+
+            # Mini flat 2D continent map dots
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(c_bright))
+            map_pts = [
+                (-35, -15), (-30, -10), (-25, -5), (-30, 5), (-32, 15), (-25, 20),
+                (-5, -12), (0, -5), (5, 5), (0, 18), (5, 22),
+                (15, -18), (25, -15), (35, -10), (40, 5), (30, 12), (20, 18),
+                (35, 22), (40, 25)
+            ]
+            for m_dx, m_dy in map_pts:
+                p.drawEllipse(QPointF(scr_lx + scr_w / 2 + m_dx * 1.1, scr_ly + 40 + m_dy * 0.9), 1.8, 1.8)
+
+            # 2. Mid-Left Floating Screen: Tactical Target Radar Scope
+            scr2_ly = cy - 10
+            scr2_h = 95
+            p.setBrush(QBrush(QColor(2, 10, 18, 160)))
+            p.setPen(QPen(QColor(c_main.red(), c_main.green(), c_main.blue(), 100), 1))
+            p.drawRoundedRect(QRectF(scr_lx, scr2_ly, scr_w, scr2_h), 4, 4)
+
+            p.setFont(QFont("Courier New", 5, QFont.Weight.Bold))
+            p.setPen(QPen(c_bright, 1))
+            p.drawText(QRectF(scr_lx + 4, scr2_ly + 3, scr_w - 8, 10), Qt.AlignmentFlag.AlignLeft, "◈ RADAR // GYRO SCOPE")
+
+            # Radar rings with sweeping beam
+            r_cx = scr_lx + scr_w / 2
+            r_cy = scr2_ly + 40
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(c_main.red(), c_main.green(), c_main.blue(), 120), 1))
+            p.drawEllipse(QRectF(r_cx - 20, r_cy - 20, 40, 40))
+            p.drawEllipse(QRectF(r_cx - 10, r_cy - 10, 20, 20))
+            p.drawLine(QPointF(r_cx - 20, r_cy), QPointF(r_cx + 20, r_cy))
+            p.drawLine(QPointF(r_cx, r_cy - 20), QPointF(r_cx, r_cy + 20))
+
+            sw_rad = math.radians(self._scan)
+            p.setPen(QPen(c_hot, 1.5))
+            p.drawLine(QPointF(r_cx, r_cy), QPointF(r_cx + 20 * math.cos(sw_rad), r_cy + 20 * math.sin(sw_rad)))
+
+            p.setFont(QFont("Courier New", 5))
+            p.setPen(QPen(QColor(c_bright.red(), c_bright.green(), c_bright.blue(), 160), 1))
+            p.drawText(QRectF(scr_lx + 4, scr2_ly + 68, scr_w - 8, 8), Qt.AlignmentFlag.AlignLeft, "TGT LOCK // 01")
+            p.drawText(QRectF(scr_lx + 4, scr2_ly + 78, scr_w - 8, 8), Qt.AlignmentFlag.AlignLeft, "BRG 042° TRUE")
+
+            # 3. Top-Right Floating Screen: 3D Orbit Globe Projection
+            scr_rx = cx + fw * 0.46 - scr_w
+            p.setBrush(QBrush(QColor(2, 10, 18, 160)))
+            p.setPen(QPen(QColor(c_cyan.red(), c_cyan.green(), c_cyan.blue(), 100), 1))
+            p.drawRoundedRect(QRectF(scr_rx, scr_ly, scr_w, scr_h), 4, 4)
+
+            p.setFont(QFont("Courier New", 5, QFont.Weight.Bold))
+            p.setPen(QPen(c_cyan, 1))
+            p.drawText(QRectF(scr_rx + 4, scr_ly + 3, scr_w - 8, 10), Qt.AlignmentFlag.AlignLeft, "◈ ORBIT // TRACK")
+
+            # Mini rotating globe/orbit inside top-right screen
+            p.save()
+            p.translate(scr_rx + scr_w / 2, scr_ly + 40)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(c_cyan.red(), c_cyan.green(), c_cyan.blue(), 130), 1))
+            p.drawEllipse(QRectF(-18, -18, 36, 36))
+            p.rotate(self._tick * 1.8)
+            p.drawEllipse(QRectF(-18, -7, 36, 14))
+            p.rotate(60)
+            p.drawEllipse(QRectF(-18, -7, 36, 14))
+            p.restore()
+
+            # 4. Mid-Right Floating Screen: Target Telemetry Scope
+            p.setBrush(QBrush(QColor(2, 10, 18, 160)))
+            p.setPen(QPen(QColor(c_main.red(), c_main.green(), c_main.blue(), 100), 1))
+            p.drawRoundedRect(QRectF(scr_rx, scr2_ly, scr_w, scr2_h), 4, 4)
+
+            p.setFont(QFont("Courier New", 5, QFont.Weight.Bold))
+            p.setPen(QPen(c_bright, 1))
+            p.drawText(QRectF(scr_rx + 4, scr2_ly + 3, scr_w - 8, 10), Qt.AlignmentFlag.AlignLeft, "◈ TARGET // SCOPE")
+
+            tr_cx = scr_rx + scr_w / 2
+            tr_cy = scr2_ly + 40
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(c_bright.red(), c_bright.green(), c_bright.blue(), 120), 1, Qt.PenStyle.DashLine))
+            p.drawEllipse(QRectF(tr_cx - 18, tr_cy - 18, 36, 36))
+            p.drawEllipse(QRectF(tr_cx - 9, tr_cy - 9, 18, 18))
+
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(c_hot))
+            p.drawEllipse(QPointF(tr_cx + 8, tr_cy - 7), 2, 2)
+            p.drawEllipse(QPointF(tr_cx - 6, tr_cy + 8), 2, 2)
+
+            p.setFont(QFont("Courier New", 5))
+            p.setPen(QPen(QColor(c_bright.red(), c_bright.green(), c_bright.blue(), 160), 1))
+            p.drawText(QRectF(scr_rx + 4, scr2_ly + 68, scr_w - 8, 8), Qt.AlignmentFlag.AlignLeft, "LAT 37°46'N")
+            p.drawText(QRectF(scr_rx + 4, scr2_ly + 78, scr_w - 8, 8), Qt.AlignmentFlag.AlignLeft, "LON 122°25'W")
+
+        # ── 1C. HOLOGRAPHIC BASE PEDESTAL & PROJECTOR BEAMS ──────────────────
+        ped_y = cy + fw * 0.28
+        ped_w = fw * 0.58
+        ped_h = fw * 0.13
+
+        # Upward holographic projection beam cone
+        beam_grad = QLinearGradient(cx, ped_y, cx, cy)
+        beam_c1 = QColor(c_cyan); beam_c1.setAlpha(min(90, int(self._halo * 0.6)))
+        beam_c2 = QColor(c_bright); beam_c2.setAlpha(0)
+        beam_grad.setColorAt(0.0, beam_c1)
+        beam_grad.setColorAt(1.0, beam_c2)
+
+        beam_path = QPainterPath()
+        beam_path.moveTo(cx - ped_w * 0.38, ped_y)
+        beam_path.lineTo(cx - fw * 0.22 * self._scale, cy + fw * 0.08)
+        beam_path.lineTo(cx + fw * 0.22 * self._scale, cy + fw * 0.08)
+        beam_path.lineTo(cx + ped_w * 0.38, ped_y)
+        beam_path.closeSubpath()
+
+        p.setBrush(QBrush(beam_grad))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawPath(beam_path)
+
+        # Concentric base projector rings
+        for pw_f, ph_f, p_al, p_w, p_col_base in [
+            (1.0, 1.0, 150, 2.0, c_cyan),
+            (0.82, 0.82, 190, 1.8, c_main),
+            (0.60, 0.60, 230, 1.5, c_bright),
+            (0.38, 0.38, 255, 1.2, c_hot)
+        ]:
+            rw, rh = ped_w * pw_f, ped_h * ph_f
+            col_ped = QColor(p_col_base)
+            col_ped.setAlpha(p_al)
+            p.setPen(QPen(col_ped, p_w))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QRectF(cx - rw / 2, ped_y - rh / 2, rw, rh))
+
+        # Base emitter tick marks
+        for deg in range(0, 360, 15):
+            r_rad = math.radians(deg)
+            ex = cx + (ped_w * 0.5) * math.cos(r_rad)
+            ey = ped_y + (ped_h * 0.5) * math.sin(r_rad)
+            p.setBrush(QBrush(c_hot))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QPointF(ex, ey), 1.8, 1.8)
+
+        # Outer expanding pulse waves
+        for pr in self._pulses:
+            p_alpha = max(0, int(180 * (1.0 - pr / (fw * 0.78))))
+            p_col = QColor(c_main); p_col.setAlpha(p_alpha)
+            p.setPen(QPen(p_col, 1.2)); p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QRectF(cx - pr, cy - pr, pr * 2, pr * 2))
+
+        # ── 2. VOLUMETRIC GOLDEN CORE GLOW (INNER PLASMA SUN) ─────────────────
+        core_r = fw * 0.25 * self._scale
+        glow_rad = QRadialGradient(cx, cy, core_r * 2.2)
+        g_center = QColor(c_hot);    g_center.setAlpha(min(255, int(self._halo * 1.9)))
+        g_mid1   = QColor(c_bright); g_mid1.setAlpha(min(240, int(self._halo * 1.5)))
+        g_mid2   = QColor(c_main);   g_mid2.setAlpha(min(190, int(self._halo * 1.0)))
+        g_outer  = QColor(c_warm);   g_outer.setAlpha(min(100, int(self._halo * 0.5)))
+        g_edge   = QColor(c_deep);   g_edge.setAlpha(0)
+
+        glow_rad.setColorAt(0.0, g_center)
+        glow_rad.setColorAt(0.25, g_mid1)
+        glow_rad.setColorAt(0.55, g_mid2)
+        glow_rad.setColorAt(0.82, g_outer)
+        glow_rad.setColorAt(1.0, g_edge)
+
+        p.setBrush(QBrush(glow_rad))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(QRectF(cx - core_r * 2.2, cy - core_r * 2.2, core_r * 4.4, core_r * 4.4))
+
+        # ── 3. 3D ROTATING GIMBAL ORBITAL RINGS ───────────────────────────────
+        gimbal_configs = [
+            (fw * 0.32 * self._scale, self._orbit_angles[0], 0.65, c_bright, 1.8),
+            (fw * 0.36 * self._scale, self._orbit_angles[1], -0.45, c_main, 1.5),
+            (fw * 0.40 * self._scale, self._orbit_angles[2], 0.95, c_warm, 1.2),
+        ]
+        for r_gimb, rot_a, tilt_val, ring_col, pen_w in gimbal_configs:
+            p.save()
+            p.translate(cx, cy)
+            p.rotate(math.degrees(tilt_val))
+            p.scale(1.0, 0.42 + 0.10 * math.sin(self._tick * 0.03))
+
+            g_rect = QRectF(-r_gimb, -r_gimb, r_gimb * 2, r_gimb * 2)
+            col_a = QColor(ring_col); col_a.setAlpha(min(220, int(self._halo * 1.1)))
+            p.setPen(QPen(col_a, pen_w, Qt.PenStyle.DashLine))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawArc(g_rect, int(rot_a * 16), int(140 * 16))
+            p.drawArc(g_rect, int((rot_a + 180) * 16), int(110 * 16))
+
+            node_rad = math.radians(rot_a)
+            nx = r_gimb * math.cos(node_rad)
+            ny = r_gimb * math.sin(node_rad)
+            p.setBrush(QBrush(c_hot))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QPointF(nx, ny), 3.2, 3.2)
+            p.restore()
+
+        # ── 4. 3D HOLOGRAPHIC EARTH GLOBE LATTICE & CONTINENTS ─────────────────
+        cos_y, sin_y = math.cos(self._yaw), math.sin(self._yaw)
+        cos_p, sin_p = math.cos(self._pitch), math.sin(self._pitch)
+        cos_r, sin_r = math.cos(self._roll), math.sin(self._roll)
+
+        dist = 3.6
+        sphere_r = fw * 0.25 * self._scale
+
+        # Project outer sphere lattice nodes
+        projected_nodes: list[tuple[float, float, float, int, int]] = []
+        for x, y, z, lat_idx, lon_idx in self._sphere_nodes:
+            x1 = x * cos_y - z * sin_y
+            z1 = x * sin_y + z * cos_y
+            y2 = y * cos_p - z1 * sin_p
+            z2 = y * sin_p + z1 * cos_p
+            x3 = x1 * cos_r - y2 * sin_r
+            y3 = x1 * sin_r + y2 * cos_r
+            z3 = z2
+
+            sc = dist / (dist - z3)
+            px = cx + x3 * sphere_r * sc
+            py = cy + y3 * sphere_r * sc
+            projected_nodes.append((px, py, z3, lat_idx, lon_idx))
+
+        # Project continent landmass nodes
+        projected_land: list[tuple[float, float, float]] = []
+        for x, y, z in self._land_nodes:
+            x1 = x * cos_y - z * sin_y
+            z1 = x * sin_y + z * cos_y
+            y2 = y * cos_p - z1 * sin_p
+            z2 = y * sin_p + z1 * cos_p
+            x3 = x1 * cos_r - y2 * sin_r
+            y3 = x1 * sin_r + y2 * cos_r
+            z3 = z2
+
+            sc = dist / (dist - z3)
+            px = cx + x3 * sphere_r * sc
+            py = cy + y3 * sphere_r * sc
+            projected_land.append((px, py, z3))
+
+        # Draw wireframe circuit connector lines between adjacent grid points
+        lats_count, lons_count = 14, 24
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRect(QRectF(0.5, 0.5, W - 1, H - 1))
+        for idx, (px, py, z, i, j) in enumerate(projected_nodes):
+            next_lon_idx = (j + 1) % lons_count
+            neighbor_idx = i * lons_count + next_lon_idx
+            if neighbor_idx < len(projected_nodes):
+                n_px, n_py, n_z, _, _ = projected_nodes[neighbor_idx]
+                avg_z = (z + n_z) / 2
+                line_alpha = max(15, min(180, int((avg_z + 1.0) * 85 + self._halo * 0.4)))
+                line_col = QColor(c_bright if avg_z > 0.2 else c_deep)
+                line_col.setAlpha(line_alpha)
+                p.setPen(QPen(line_col, 1.0 if avg_z > 0 else 0.7))
+                p.drawLine(QPointF(px, py), QPointF(n_px, n_py))
 
-        gold = QColor("#ffb300")
-        gold.setAlpha(130 if active else 70)
-        p.setPen(QPen(gold, 1.4))
-        for x, y, sx, sy_c in [(10, 10, 1, 1), (W - 10, 10, -1, 1), (10, H - 10, 1, -1), (W - 10, H - 10, -1, -1)]:
-            p.drawLine(QPointF(x, y), QPointF(x + sx * 28, y))
-            p.drawLine(QPointF(x, y), QPointF(x, y + sy_c * 28))
+            if i < lats_count - 1:
+                lat_neighbor_idx = (i + 1) * lons_count + j
+                if lat_neighbor_idx < len(projected_nodes):
+                    n_px, n_py, n_z, _, _ = projected_nodes[lat_neighbor_idx]
+                    avg_z = (z + n_z) / 2
+                    line_alpha = max(15, min(180, int((avg_z + 1.0) * 85 + self._halo * 0.4)))
+                    line_col = QColor(c_bright if avg_z > 0.2 else c_deep)
+                    line_col.setAlpha(line_alpha)
+                    p.setPen(QPen(line_col, 1.0 if avg_z > 0 else 0.7))
+                    p.drawLine(QPointF(px, py), QPointF(n_px, n_py))
 
-        # ── 3. Telemetry side rails ─────────────────────────────────────
-        self._draw_energy_columns(p, W, H, amp, active)
+        # Draw Earth continent landmass points (Depth sorted)
+        for px, py, z in sorted(projected_land, key=lambda n: n[2]):
+            depth_factor = (z + 1.0) / 2.0
+            if depth_factor > 0.35:
+                l_sz = 2.0 + depth_factor * 2.5
+                l_alpha = min(255, int(depth_factor * 220 + 35))
+                l_col = QColor(c_hot if depth_factor > 0.7 else c_bright)
+                l_col.setAlpha(l_alpha)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QBrush(l_col))
+                p.drawEllipse(QPointF(px, py), l_sz, l_sz)
 
-        # ── 4. Layout coordinates ─────────────────────────────────────
-        core_y = H * 0.45
-        base_r = min(W * 0.38, H * 0.40)
+        # Draw projected sphere nodes (Depth sorted)
+        for px, py, z, i, j in sorted(projected_nodes, key=lambda n: n[2]):
+            depth_factor = (z + 1.0) / 2.0
+            pt_sz = 1.6 + depth_factor * 2.8 + (amp * 2.0 if depth_factor > 0.6 else 0.0)
+            pt_alpha = max(40, min(255, int(depth_factor * 200 + 45 + amp * 60)))
 
-        # ── 5. Holographic platform / pedestal projector ──────────────────
-        plat_y = core_y + base_r * 0.82
-        self._draw_platform(p, cx, plat_y, base_r, amp, active)
+            if depth_factor > 0.75:
+                pt_col = QColor(c_hot)
+            elif depth_factor > 0.4:
+                pt_col = QColor(c_bright)
+            else:
+                pt_col = QColor(c_warm)
+            pt_col.setAlpha(pt_alpha)
 
-        # ── 6. Golden holographic globe (fully procedural) ────────────────
-        self._draw_holographic_globe(p, cx, core_y, base_r, amp, active, processing)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(pt_col))
+            p.drawEllipse(QPointF(px, py), pt_sz, pt_sz)
 
-        # ── 7. Orbital rings (layered over the globe) ────────────────────
-        self._draw_orbital_rings(p, cx, core_y, base_r, amp, active, processing)
+        # ── 5. AMBIENT ORBITING DUST & BURST PARTICLES ─────────────────────────
+        for theta, phi, r_off, spd, sz, a_phase in self._ambient_particles:
+            r_curr = sphere_r * r_off
+            ax = r_curr * math.cos(phi) * math.cos(theta)
+            ay = r_curr * math.sin(phi)
+            az = r_curr * math.cos(phi) * math.sin(theta)
 
-        # ── 8. Dense 3D volumetric particle cloud ───────────────────────
-        self._draw_particles(p, cx, core_y, base_r, amp, active, processing)
+            ax1 = ax * cos_y - az * sin_y
+            az1 = ax * sin_y + az * cos_y
+            ay2 = ay * cos_p - az1 * sin_p
+            az2 = ay * sin_p + az1 * cos_p
 
-        # ── 9. Processing scan effect ─────────────────────────────────
-        if processing:
-            self._draw_processing_hud(p, cx, core_y, base_r, amp)
+            sc_a = dist / (dist - az2)
+            apx = cx + ax1 * sc_a
+            apy = cy + ay2 * sc_a
 
-        # ── 10. Waveform + microphone layout (anchored below globe) ─────────
-        wave_w  = base_r * 2.60
-        wave_y  = core_y + base_r * 0.88
-        dest_rect = QRectF(cx - wave_w / 2, wave_y - base_r * 0.15, wave_w, base_r * 1.20)
-        self._dest_rect = dest_rect
-        mic_sy = wave_y
+            d_fact = (az2 + 1.0) / 2.0
+            p_alpha = max(20, min(240, int((0.5 + 0.5 * math.sin(a_phase)) * (d_fact * 180 + 50))))
+            p_c = QColor(c_bright if d_fact > 0.5 else c_deep)
+            p_c.setAlpha(p_alpha)
 
-        # ── 11. Dual symmetrical waveform wings ─────────────────────────
-        raw_state = (self.state or "").upper()
-        self._waveform.render(p, cx, mic_sy, dest_rect, amp, self._tick, raw_state, speaking, active)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(p_c))
+            p.drawEllipse(QPointF(apx, apy), sz * sc_a, sz * sc_a)
 
-        # ── 12. Interactive central microphone control ───────────────────
-        self._draw_microphone_control(p, cx, mic_sy, dest_rect, amp, active)
+        # Audio burst particles (ejected outward on voice)
+        for bx, by, _, _, life, _, b_sz, col_t in self._burst_particles:
+            b_alpha = max(0, min(255, int(life * 255)))
+            b_col = QColor(c_hot if col_t == 2 else (c_bright if col_t == 0 else c_warm))
+            b_col.setAlpha(b_alpha)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(b_col))
+            p.drawEllipse(QPointF(bx, by), b_sz * life, b_sz * life)
 
-        # ── 13. Dynamic status badge ────────────────────────────────
-        self._draw_real_ui_text(p, cx, core_y, mic_sy, base_r, amp, active)
+        # ── 6. CENTER HOLOGRAPHIC ASSISTANT IDENTITY ───────────────────────────
+        if self._face_px:
+            fsz = int(fw * 0.44 * self._scale)
+            q_sz = max(1, (fsz // 4) * 4)
+            if self._face_cache is None or self._face_cache_sz != q_sz:
+                self._face_cache = self._face_px.scaled(
+                    q_sz, q_sz,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+                self._face_cache_sz = q_sz
+            scaled = self._face_cache
+            p.drawPixmap(int(cx - scaled.width() / 2), int(cy - scaled.height() / 2), scaled)
+        else:
+            # Holographic Core Hexagon/Reticle Badge
+            badge_r = 38 + amp * 8
+            badge_col = QColor(c_bright); badge_col.setAlpha(min(255, int(self._halo * 1.6)))
+            inner_bg = QColor(8, 4, 1, 150)
+            p.setBrush(QBrush(inner_bg))
+            p.setPen(QPen(badge_col, 1.5, Qt.PenStyle.SolidLine))
+
+            # Outer Hexagonal badge
+            hex_path = QPainterPath()
+            for k in range(6):
+                ang_k = math.radians(k * 60 + self._tick * 0.3)
+                hx = cx + badge_r * math.cos(ang_k)
+                hy = cy + badge_r * math.sin(ang_k)
+                if k == 0:
+                    hex_path.moveTo(hx, hy)
+                else:
+                    hex_path.lineTo(hx, hy)
+            hex_path.closeSubpath()
+            p.drawPath(hex_path)
+
+            # Inner concentric hexagonal rim
+            inner_hex = QPainterPath()
+            for k in range(6):
+                ang_k = math.radians(k * 60 - self._tick * 0.3)
+                hx = cx + (badge_r - 6) * math.cos(ang_k)
+                hy = cy + (badge_r - 6) * math.sin(ang_k)
+                if k == 0:
+                    inner_hex.moveTo(hx, hy)
+                else:
+                    inner_hex.lineTo(hx, hy)
+            inner_hex.closeSubpath()
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(c_warm.red(), c_warm.green(), c_warm.blue(), 160), 1.0, Qt.PenStyle.DashLine))
+            p.drawPath(inner_hex)
+
+            # Center target pin
+            p.setBrush(QBrush(c_hot))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QPointF(cx, cy), 2.2, 2.2)
+
+            # Assistant Name in Golden Holographic Typography
+            txt_alpha = min(255, int(self._halo * 2.4))
+            p.setFont(QFont("Courier New", 12, QFont.Weight.Bold))
+            p.setPen(QPen(QColor(c_hot.red(), c_hot.green(), c_hot.blue(), txt_alpha), 1))
+            p.drawText(QRectF(cx - 90, cy - 12, 180, 24), Qt.AlignmentFlag.AlignCenter, self._assistant_name)
+
+        # ── 7. CENTRAL CIRCULAR MICROPHONE BUTTON & FLANKING HORIZONTAL WAVES ─
+        sy = cy + fw * 0.37
+        mic_btn_r = 22 + amp * 4
+
+        # Circular glowing gold microphone button (like replica image)
+        mic_grad = QRadialGradient(cx, sy, mic_btn_r * 1.5)
+        mic_grad.setColorAt(0.0, QColor(c_bright))
+        mic_grad.setColorAt(0.7, QColor(c_main))
+        mic_grad.setColorAt(1.0, QColor(c_warm))
+        p.setBrush(QBrush(QColor(12, 6, 2, 220)))
+        p.setPen(QPen(QColor(c_bright), 1.8))
+        p.drawEllipse(QRectF(cx - mic_btn_r, sy - mic_btn_r, mic_btn_r * 2, mic_btn_r * 2))
+
+        # Microphone Icon inside button — from mj.png sprite sheet
+        mic_px = IconManager.get_pixmap("mic_active", int(mic_btn_r * 1.15))
+        if mic_px and not mic_px.isNull():
+            p.drawPixmap(
+                int(cx - mic_px.width() / 2), int(sy - mic_px.height() / 2), mic_px
+            )
+        else:
+            # Fallback: drawn mic glyph (only if mj.png icon sheet is unavailable)
+            p.setPen(QPen(c_hot, 2))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(cx, sy - 4), 5, 5)
+            p.drawRoundedRect(QRectF(cx - 4, sy + 1, 8, 9), 3, 3)
+            p.drawLine(QPointF(cx - 7, sy + 9), QPointF(cx + 7, sy + 9))
+            p.drawLine(QPointF(cx - 2, sy + 13), QPointF(cx + 2, sy + 13))
+
+        # "Listening..." glowing label below button
+        p.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
+        p.setPen(QPen(c_bright, 1))
+        stat_lbl = "Listening..." if self.state == "LISTENING" else (
+            "Speaking..." if self.speaking else ("Thinking..." if self.state == "THINKING" else self.state)
+        )
+        p.drawText(QRectF(cx - 60, sy + mic_btn_r + 4, 120, 14), Qt.AlignmentFlag.AlignCenter, stat_lbl)
+
+        # ── 8. HORIZONTAL EQUALIZER WAVES FLANKING THE MIC BUTTON ─────────────
+        flank_n = 28
+        bw = 4
+        bgap = 2
+        # Left horizontal equalizer wave
+        for i in range(flank_n):
+            dist_f = i / float(flank_n)
+            env = math.sin(dist_f * math.pi) ** 0.85
+            hgt = max(2, int(4 + (16.0 * env + amp * 22.0 * env) * (0.6 + 0.4 * math.sin(self._tick * 0.25 + i * 0.5))))
+            bx = cx - mic_btn_r - 18 - (flank_n - i) * (bw + bgap)
+            p.fillRect(QRectF(bx, sy - hgt / 2, bw, hgt), QColor(c_bright if amp > 0.04 else c_main))
+
+        # Right horizontal equalizer wave
+        for i in range(flank_n):
+            dist_f = i / float(flank_n)
+            env = math.sin(dist_f * math.pi) ** 0.85
+            hgt = max(2, int(4 + (16.0 * env + amp * 22.0 * env) * (0.6 + 0.4 * math.sin(self._tick * 0.25 + i * 0.5))))
+            bx = cx + mic_btn_r + 18 + i * (bw + bgap)
+            p.fillRect(QRectF(bx, sy - hgt / 2, bw, hgt), QColor(c_bright if amp > 0.04 else c_main))
 
         p.end()
 
-
 class IconManager:
-    """Extracts, crops and caches the 40 holographic UI icons from the
-    config/mj-1.png sprite sheet (10 columns x 4 rows).
-
-    NOTE: config/mj.png is the full golden AI-Core artwork and is used ONLY as
-    the centre visual. config/jarvis.ico is the Windows app icon only. Neither
-    is ever used for interface icons."""
+    """Extracts, crops and caches icons from config/mj or config/mj.png (40 holographic icons)."""
     _cache: dict[tuple[str, int], QPixmap] = {}
     _raw_crops: dict[str, object] = {}
     _loaded = False
-
-    @staticmethod
-    def _detect_icon_bands(im):
-        """Find the centre-line of every icon by projecting the sheet's alpha
-        channel (icon badges are solid, the gaps between them are empty). Returns
-        (col_centres, row_centres) and falls back to an even grid whenever the
-        sheet does not look like the expected 10x4 layout."""
-        W, H = im.size
-        cols_n, rows_n = 10, 4
-        try:
-            import numpy as np
-            alpha = np.asarray(im.getchannel("A"), dtype=float)
-            col_prof = alpha.mean(axis=0)   # per-column mean alpha
-            row_prof = alpha.mean(axis=1)   # per-row mean alpha
-
-            def _centres(prof, count):
-                thr = max(2.0, float(prof.max()) * 0.35)
-                bands: list[tuple[int, int]] = []
-                start = None
-                for i, v in enumerate(prof):
-                    if v >= thr and start is None:
-                        start = i
-                    elif v < thr and start is not None:
-                        bands.append((start, i - 1))
-                        start = None
-                if start is not None:
-                    bands.append((start, len(prof) - 1))
-                bands = [b for b in bands if (b[1] - b[0]) > 20]
-                if len(bands) != count:
-                    return None
-                return [(b[0] + b[1]) / 2.0 for b in bands]
-
-            cxs = _centres(col_prof, cols_n)
-            cys = _centres(row_prof, rows_n)
-            if cxs and cys:
-                return cxs, cys
-        except Exception:
-            pass
-        return ([(c + 0.5) * (W / cols_n) for c in range(cols_n)],
-                [(r + 0.5) * (H / rows_n) for r in range(rows_n)])
 
     _ALIASES = {
         "mem": "memory", "ram": "memory", "net": "network", "temp": "temperature",
@@ -1375,7 +1216,7 @@ class IconManager:
         if cls._loaded:
             return
         cls._loaded = True
-        icon_path = CONFIG_DIR / "mj-1.png"
+        icon_path = CONFIG_DIR / "mj.png"
         if not icon_path.exists():
             return
         try:
@@ -1393,14 +1234,12 @@ class IconManager:
                 "start": (3, 0), "pause": (3, 1), "stop": (3, 2), "refresh": (3, 3), "delete": (3, 4),
                 "edit": (3, 5), "folder": (3, 6), "download": (3, 7), "lock": (3, 8), "unlock": (3, 9)
             }
-            _cols, _rows = cls._detect_icon_bands(im)
-            _half = 0.5 * min(cw, ch) * 0.94
             for name, (r, c) in mapping.items():
-                bx = _cols[c] if c < len(_cols) else (c + 0.5) * cw
-                by = _rows[r] if r < len(_rows) else (r + 0.5) * ch
-                box = (int(round(bx - _half)), int(round(by - _half)),
-                       int(round(bx + _half)), int(round(by + _half)))
-                cls._raw_crops[name] = im.crop(box)
+                x0 = int(c * cw + cw * 0.08)
+                y0 = int(r * ch + ch * 0.05)
+                x1 = int((c + 1) * cw - cw * 0.08)
+                y1 = int((r + 1) * ch - ch * 0.22)
+                cls._raw_crops[name] = im.crop((x0, y0, x1, y1))
         except Exception as e:
             print(f"[IconManager] ⚠️ Error loading icon sheet: {e}")
 
@@ -1620,7 +1459,7 @@ class StatusBadge(QWidget):
         p.setPen(QPen(QColor(C.BORDER_A), 1))
         p.drawRoundedRect(QRectF(1, 1, W - 2, H - 2), 4, 4)
 
-        # Icon from mj-1.png
+        # Icon from mj.png
         px = IconManager.get_pixmap(self.icon_name, 22)
         if px and not px.isNull():
             p.drawPixmap(6, 6, px)
@@ -1745,7 +1584,7 @@ class LogWidget(QTextEdit):
             QTimer.singleShot(20, self._next)
 
 _FILE_ICONS = {
-    # category -> (mj-1.png icon name, colour)
+    # category -> (mj.png icon name, colour)
     "image":   ("vision",      "#00d4ff"), "video":   ("analyze",    "#ff6b00"),
     "audio":   ("voice",       "#cc44ff"), "pdf":     ("file_upload", "#ff4444"),
     "word":    ("file_upload", "#4488ff"), "excel":   ("storage",    "#44bb44"),
@@ -1947,7 +1786,7 @@ class _DropCanvas(QWidget):
         ext_str  = path.suffix.upper().lstrip(".") or "FILE"
 
         block_x, block_w = 10, 60
-        # Icon from mj-1.png sprite sheet (fallback: text block)
+        # Icon from mj.png sprite sheet (fallback: text block)
         px = IconManager.get_pixmap(icon, 44)
         if px and not px.isNull():
             p.drawPixmap(int(block_x + (block_w - 44) / 2), int((H - 44) / 2), px)
@@ -3122,95 +2961,86 @@ class ClipboardPanel(QWidget):
         self._dismiss_timer.start(8000)
 
 
-class EnglishTutorOverlay(QDialog):
+class EnglishTutorOverlay(QWidget):
     """
-    English Tutor / Speaking Mentor floating dialog.
-    Opens as an independent, resizable window with standard window controls (minimize, maximize, close).
-    Features:
-      - Current topic & question display
-      - Live state indicator (IDLE, LISTENING, ANALYZING, FEEDBACK, etc.)
-      - Five silent live scores (Grammar, Vocabulary, Fluency, Pronunciation, Overall)
-      - Scrollable interactive transcript & coaching history
-      - Action controls (Practice Word, Shadowing, Daily Coach, Hear Word, Next Topic, My Score, Close)
+    English Tutor / Speaking Mentor panel.
+
+    Shows below/around the central AI Core when the ENGLISH TUTOR nav is active:
+      - Current topic & question
+      - Listening / Analyzing / Feedback state lights
+      - Four separate scores (Grammar / Vocabulary / Fluency / Pronunciation)
+      - Word practice + sentence shadowing buttons
+      - Daily coaching mode
+    Uses config/mj.png icons only — never jarvis.ico, never emoji.
     """
 
-    speak_requested         = pyqtSignal(str)
-    record_requested        = pyqtSignal()
-    feedback_requested      = pyqtSignal()
+    # Actions emitted to the backend (JarvisLive wires these):
+    #   request_speak(text)  — make JARVIS speak
+    #   request_record()     — start mic capture for tutor
+    #   request_feedback()   — analyze captured audio + transcript
+    speak_requested    = pyqtSignal(str)
+    record_requested   = pyqtSignal()
+    feedback_requested = pyqtSignal()
     next_question_requested = pyqtSignal()
-    score_query_requested   = pyqtSignal()
-    close_requested         = pyqtSignal()
 
-    # Thread-safe update channels
+    # ── Thread-safe update channels ─────────────────────────────────────────
+    # The tutor is driven from the asyncio loop and from worker threads (see
+    # JarvisLive), and touching a QWidget — least of all its QTextDocument —
+    # from a foreign thread is what produced
+    #   "QObject: Cannot create children for a parent that is in a different
+    #    thread. (Parent is QTextDocument…)"
+    # followed by the window dying. These signals are the ONLY entry point for
+    # the public setters below: emitting a signal is safe from any thread, and
+    # the connected slots are guaranteed to run on the Qt main thread.
     _state_sig    = pyqtSignal(str)
     _question_sig = pyqtSignal(str, str)
     _feedback_sig = pyqtSignal(dict)
     _progress_sig = pyqtSignal(dict)
     _hearing_sig  = pyqtSignal(str)
 
-    _W, _H = 820, 580
+    _W, _H = 620, 384
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName("EnglishTutorDialog")
-        self.setWindowTitle("JARVIS — English Speaking Mentor")
-        self.setWindowFlags(
-            Qt.WindowType.Window |
-            Qt.WindowType.WindowTitleHint |
-            Qt.WindowType.WindowSystemMenuHint |
-            Qt.WindowType.WindowMinMaxButtonsHint |
-            Qt.WindowType.WindowCloseButtonHint
-        )
-        self.resize(self._W, self._H)
-        self.setMinimumSize(680, 460)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setStyleSheet(f"""
-            QDialog#EnglishTutorDialog {{
-                background: #010a12;
+            EnglishTutorOverlay {{
+                background: rgba(1, 10, 18, 246);
                 border: 1px solid {C.BORDER_B};
+                border-radius: 8px;
             }}
         """)
-        self._state = "IDLE"
-        self._round_num = 0
+        self.setFixedSize(self._W, self._H)
+        self._state = "IDLE"   # IDLE | LISTENING | ANALYZING | FEEDBACK | PRACTICE | SHADOWING | DAILY_COACH
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(16, 12, 16, 12)
-        lay.setSpacing(8)
+        lay.setContentsMargins(14, 10, 14, 10)
+        lay.setSpacing(6)
 
         # ── Header ───────────────────────────────────────────────────────────
-        hdr = QHBoxLayout(); hdr.setSpacing(10)
-        _tutor_icon = IconManager.get_pixmap("voice", 26)
+        hdr = QHBoxLayout(); hdr.setSpacing(8)
+        _tutor_icon = IconManager.get_pixmap("voice", 24)
         icon_lbl = QLabel()
         if _tutor_icon and not _tutor_icon.isNull():
             icon_lbl.setPixmap(_tutor_icon)
-        icon_lbl.setFixedSize(26, 26)
+        icon_lbl.setFixedSize(24, 24)
         hdr.addWidget(icon_lbl)
 
-        title_col = QVBoxLayout(); title_col.setSpacing(1)
-        self._title_lbl = QLabel("ENGLISH SPEAKING MENTOR")
-        self._title_lbl.setFont(QFont("Courier New", 11, QFont.Weight.Bold))
+        title_col = QVBoxLayout(); title_col.setSpacing(0)
+        self._title_lbl = QLabel("ENGLISH TUTOR")
+        self._title_lbl.setFont(QFont("Courier New", 10, QFont.Weight.Bold))
         self._title_lbl.setStyleSheet(f"color: {C.PRI}; background: transparent;")
         title_col.addWidget(self._title_lbl)
-        self._sub_lbl = QLabel("Interactive Pronunciation & Fluency Coach")
+        self._sub_lbl = QLabel("Speaking Mentor")
         self._sub_lbl.setFont(QFont("Courier New", 7))
         self._sub_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         title_col.addWidget(self._sub_lbl)
         hdr.addLayout(title_col)
         hdr.addStretch()
 
-        self._round_lbl = QLabel("ROUND 0")
-        self._round_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
-        self._round_lbl.setStyleSheet(
-            f"color: {C.ACC2}; background: {C.PANEL2}; border: 1px solid {C.BORDER}; "
-            f"border-radius: 3px; padding: 2px 8px;"
-        )
-        hdr.addWidget(self._round_lbl)
-
         self._state_lbl = QLabel("IDLE")
         self._state_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
-        self._state_lbl.setStyleSheet(
-            f"color: {C.TEXT_DIM}; background: {C.DARK}; border: 1px solid {C.BORDER}; "
-            f"border-radius: 3px; padding: 2px 8px;"
-        )
+        self._state_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
         hdr.addWidget(self._state_lbl)
         lay.addLayout(hdr)
 
@@ -3219,21 +3049,21 @@ class EnglishTutorOverlay(QDialog):
         self._topic_lbl.setFont(QFont("Courier New", 8, QFont.Weight.Bold))
         self._topic_lbl.setStyleSheet(
             f"color: {C.ACC2}; background: {C.PANEL2}; border: 1px solid {C.BORDER}; "
-            f"border-radius: 3px; padding: 4px 8px;"
+            f"border-radius: 3px; padding: 3px 6px;"
         )
         lay.addWidget(self._topic_lbl)
 
-        self._question_lbl = QLabel("Welcome! Tell me about yourself or what you've been working on today.")
-        self._question_lbl.setFont(QFont("Courier New", 9))
+        self._question_lbl = QLabel("Tell me about your day so far.")
+        self._question_lbl.setFont(QFont("Courier New", 8))
         self._question_lbl.setStyleSheet(
-            f"color: {C.TEXT}; background: {C.DARK}; border: 1px solid {C.BORDER_B}; "
-            f"border-radius: 4px; padding: 8px 10px;"
+            f"color: {C.TEXT}; background: {C.DARK}; border: 1px solid {C.BORDER}; "
+            f"border-radius: 3px; padding: 4px 6px;"
         )
         self._question_lbl.setWordWrap(True)
         lay.addWidget(self._question_lbl)
 
-        # ── State lights & Telemetry row ──────────────────────────────────────
-        status_row = QHBoxLayout(); status_row.setSpacing(14)
+        # ── State lights row ─────────────────────────────────────────────────
+        status_row = QHBoxLayout(); status_row.setSpacing(12)
         self._light_listen = self._make_light("LISTENING", C.PRI)
         self._light_analyze = self._make_light("ANALYZING", C.ACC2)
         self._light_feedback = self._make_light("FEEDBACK", C.GREEN)
@@ -3241,50 +3071,38 @@ class EnglishTutorOverlay(QDialog):
         status_row.addWidget(self._light_analyze)
         status_row.addWidget(self._light_feedback)
         status_row.addStretch()
-
-        self._wpm_lbl = QLabel("SPEED: -- WPM")
-        self._wpm_lbl.setFont(QFont("Courier New", 8))
-        self._wpm_lbl.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
-        status_row.addWidget(self._wpm_lbl)
         lay.addLayout(status_row)
 
-        # ── Scores row (Silent Live Scores) ──────────────────────────────────
+        # ── Scores row ───────────────────────────────────────────────────────
         self._scores_row = QHBoxLayout(); self._scores_row.setSpacing(8)
         self._score_grammar  = self._make_score("GRAMMAR", C.PRI)
-        self._score_vocab    = self._make_score("VOCABULARY", C.ACC2)
+        self._score_vocab    = self._make_score("VOCAB", C.ACC2)
         self._score_fluency  = self._make_score("FLUENCY", C.GREEN)
-        self._score_prono    = self._make_score("PRONUNCIATION", "#c054ff")
+        self._score_prono    = self._make_score("PRONUNO", "#c054ff")
         self._score_overall  = self._make_score("OVERALL", C.ACC)
         for w in [self._score_grammar, self._score_vocab, self._score_fluency,
                   self._score_prono, self._score_overall]:
             self._scores_row.addWidget(w, stretch=1)
         lay.addLayout(self._scores_row)
 
-        # ── Interactive Transcript Area ──────────────────────────────────────
-        trans_hdr = QHBoxLayout()
-        trans_title = QLabel("COACHING TRANSCRIPT & TIPS")
-        trans_title.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
-        trans_title.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
-        trans_hdr.addWidget(trans_title)
-        trans_hdr.addStretch()
-        lay.addLayout(trans_hdr)
-
-        self._transcript_view = QTextEdit()
-        self._transcript_view.setReadOnly(True)
-        self._transcript_view.setFont(QFont("Courier New", 8))
-        self._transcript_view.setStyleSheet(f"""
+        # ── Feedback area ────────────────────────────────────────────────────
+        self._feedback_view = QTextEdit()
+        self._feedback_view.setReadOnly(True)
+        self._feedback_view.setFixedHeight(86)
+        self._feedback_view.setFont(QFont("Courier New", 7))
+        self._feedback_view.setStyleSheet(f"""
             QTextEdit {{
                 background: {C.DARK};
                 color: {C.TEXT};
                 border: 1px solid {C.BORDER};
-                border-radius: 4px;
-                padding: 6px 8px;
+                border-radius: 3px;
+                padding: 4px 6px;
             }}
         """)
-        lay.addWidget(self._transcript_view, stretch=1)
+        lay.addWidget(self._feedback_view)
 
         # ── Action buttons ───────────────────────────────────────────────────
-        btn_row = QHBoxLayout(); btn_row.setSpacing(6)
+        btn_row = QHBoxLayout(); btn_row.setSpacing(5)
 
         self._practice_btn = self._make_btn("PRACTICE", "voice")
         self._practice_btn.clicked.connect(self._on_practice)
@@ -3298,7 +3116,7 @@ class EnglishTutorOverlay(QDialog):
         self._daily_btn.clicked.connect(self._on_daily)
         btn_row.addWidget(self._daily_btn)
 
-        self._hear_btn = self._make_btn("HEAR WORD", "voice")
+        self._hear_btn = self._make_btn("HEAR", "voice")
         self._hear_btn.clicked.connect(self._on_hear)
         btn_row.addWidget(self._hear_btn)
 
@@ -3306,27 +3124,15 @@ class EnglishTutorOverlay(QDialog):
         self._next_btn.clicked.connect(lambda: self.next_question_requested.emit())
         btn_row.addWidget(self._next_btn)
 
-        self._score_btn = self._make_btn("MY SCORE", "chart")
-        self._score_btn.clicked.connect(lambda: self.score_query_requested.emit())
-        btn_row.addWidget(self._score_btn)
-
         btn_row.addStretch()
-
-        self._close_btn = self._make_btn("CLOSE TUTOR", "stop")
-        self._close_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: #2a0808; color: #ff6b6b;
-                border: 1px solid #772222; border-radius: 3px;
-                padding: 4px 10px; font-weight: bold;
-            }}
-            QPushButton:hover {{ background: #4a1010; color: #ff9999; border-color: #ff4444; }}
-        """)
-        self._close_btn.clicked.connect(self.close)
+        self._close_btn = self._make_btn("CLOSE", "stop")
+        self._close_btn.clicked.connect(self.hide)
         btn_row.addWidget(self._close_btn)
-
         lay.addLayout(btn_row)
 
-        # Route setters through thread-safe Qt signals
+        # Route every public setter through its signal (see the signal block for
+        # why). Queued connections guarantee the slots below run on the Qt main
+        # thread no matter which thread emitted.
         self._state_sig.connect(self._apply_state_ui)
         self._question_sig.connect(self._apply_question_ui)
         self._feedback_sig.connect(self._apply_feedback_ui)
@@ -3351,34 +3157,24 @@ class EnglishTutorOverlay(QDialog):
     def _make_score(self, label: str, color: str) -> QWidget:
         w = QWidget()
         w.setStyleSheet(
-            f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 4px;"
+            f"background: {C.PANEL2}; border: 1px solid {C.BORDER}; border-radius: 3px;"
         )
-        v = QVBoxLayout(w); v.setContentsMargins(8, 4, 8, 4); v.setSpacing(1)
+        v = QVBoxLayout(w); v.setContentsMargins(6, 3, 6, 3); v.setSpacing(0)
         l = QLabel(label)
-        l.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
+        l.setFont(QFont("Courier New", 6, QFont.Weight.Bold))
         l.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
-        l.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(l)
-
         val = QLabel("--")
-        val.setFont(QFont("Courier New", 14, QFont.Weight.Bold))
+        val.setFont(QFont("Courier New", 11, QFont.Weight.Bold))
         val.setStyleSheet(f"color: {color}; background: transparent;")
         val.setAlignment(Qt.AlignmentFlag.AlignCenter)
         v.addWidget(val)
-
-        sub = QLabel("Live: --")
-        sub.setFont(QFont("Courier New", 6))
-        sub.setStyleSheet(f"color: {C.TEXT_DIM}; background: transparent;")
-        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        v.addWidget(sub)
-
         setattr(w, "_value_lbl", val)
-        setattr(w, "_sub_lbl", sub)
         return w
 
     def _make_btn(self, text: str, icon_name: str) -> QPushButton:
         b = QPushButton(f"  {text}")
-        b.setFixedHeight(28)
+        b.setFixedHeight(26)
         b.setFont(QFont("Courier New", 7, QFont.Weight.Bold))
         b.setCursor(Qt.CursorShape.PointingHandCursor)
         px = IconManager.get_pixmap(icon_name, 14)
@@ -3389,27 +3185,12 @@ class EnglishTutorOverlay(QDialog):
             QPushButton {{
                 background: {C.PANEL2}; color: {C.TEXT_MED};
                 border: 1px solid {C.BORDER}; border-radius: 3px;
-                padding: 2px 8px;
             }}
             QPushButton:hover {{ background: {C.PRI_GHO}; color: {C.PRI}; border-color: {C.BORDER_B}; }}
         """)
         return b
 
     # ── Public API (called from MainWindow / JarvisLive) ───────────────────
-
-    def reset_scores(self):
-        """Reset all live scores and transcript to clean slate."""
-        self._round_num = 0
-        self._round_lbl.setText("ROUND 0")
-        for widget in [self._score_grammar, self._score_vocab, self._score_fluency,
-                      self._score_prono, self._score_overall]:
-            lbl = getattr(widget, "_value_lbl", None)
-            if lbl: lbl.setText("--")
-            sub = getattr(widget, "_sub_lbl", None)
-            if sub: sub.setText("Live: --")
-        self._transcript_view.clear()
-        self._transcript_view.append("<span style='color: #64748b;'>[English Tutor Session initialized — scores reset to 0]</span><br>")
-        self._wpm_lbl.setText("SPEED: -- WPM")
 
     def set_state(self, state: str):
         """Thread-safe. Queue a state change for the Qt main thread."""
@@ -3425,7 +3206,7 @@ class EnglishTutorOverlay(QDialog):
         }
         c = colors.get(state, C.TEXT_DIM)
         self._state_lbl.setText(state)
-        self._state_lbl.setStyleSheet(f"color: {c}; background: {C.DARK}; border: 1px solid {C.BORDER}; border-radius: 3px; padding: 2px 8px;")
+        self._state_lbl.setStyleSheet(f"color: {c}; background: transparent;")
 
         self._set_light(self._light_listen, state == "LISTENING")
         self._set_light(self._light_analyze, state == "ANALYZING")
@@ -3446,6 +3227,7 @@ class EnglishTutorOverlay(QDialog):
         """Slot — runs on the Qt main thread."""
         self._topic_lbl.setText(f"CURRENT TOPIC: {topic}")
         self._question_lbl.setText(question)
+        self._feedback_view.clear()
 
     def show_feedback(self, report: dict):
         """Thread-safe. Queue a report for the Qt main thread."""
@@ -3453,58 +3235,50 @@ class EnglishTutorOverlay(QDialog):
 
     def _apply_feedback_ui(self, report: dict):
         """Slot — runs on the Qt main thread. Combined tutor report."""
-        self._round_num += 1
-        self._round_lbl.setText(f"ROUND {self._round_num}")
-
         scores = report.get("scores", {})
         for name, key, widget in [
             ("GRAMMAR", "grammar", self._score_grammar),
-            ("VOCABULARY", "vocabulary", self._score_vocab),
+            ("VOCAB", "vocabulary", self._score_vocab),
             ("FLUENCY", "fluency", self._score_fluency),
-            ("PRONUNCIATION", "pronunciation", self._score_prono),
+            ("PRONUNO", "pronunciation", self._score_prono),
             ("OVERALL", "overall", self._score_overall),
         ]:
             val = scores.get(key) if isinstance(scores, dict) else None
-            lbl = getattr(widget, "_value_lbl", None)
-            if lbl:
-                if isinstance(val, (int, float)) and val > 0:
-                    lbl.setText(f"{val:.0f}/10")
-                elif key == "pronunciation" and (val == 0 or val is None):
-                    lbl.setText("N/A")
-                else:
-                    lbl.setText(f"{val:.0f}" if isinstance(val, (int, float)) else "--")
+            lbl = getattr(widget, "_value_lbl")
+            lbl.setText(f"{val:.0f}/10" if isinstance(val, (int, float)) else "--")
 
-        # Update WPM reading
-        pace = report.get("speaking_speed", {})
-        if isinstance(pace, dict) and pace.get("wpm"):
-            self._wpm_lbl.setText(f"SPEED: {pace.get('wpm')} WPM — {pace.get('assessment', '')}")
+        parts = []
+        gf = report.get("overall_feedback", "")
+        if gf:
+            parts.append(gf)
 
-        # Append to transcript
-        transcript = report.get("transcript", "")
-        tutor_reply = report.get("tutor_reply", "")
-        if transcript:
-            self._transcript_view.append(f"<b style='color: {C.PRI};'>You:</b> {transcript}")
-        if tutor_reply:
-            self._transcript_view.append(f"<b style='color: #38bdf8;'>Jarvis:</b> {tutor_reply}")
+        # Fluency
+        fl = report.get("fluency_issues", {})
+        if isinstance(fl, dict):
+            fillers = fl.get("filler_words", [])
+            if fillers:
+                parts.append("FILLER: " + ", ".join(f'"{f.get("word","")}"×{f.get("count",0)}' for f in fillers[:3]))
+            sug = fl.get("suggestion", "")
+            if sug:
+                parts.append(sug)
 
-        # Highlight tips or errors
-        issues = []
-        for g in report.get("grammar_issues", []):
-            if isinstance(g, dict) and g.get("issue"):
-                issues.append(f"Grammar tip: {g.get('issue')} → say '<i>{g.get('correction', '')}</i>'")
+        # Pronunciation
         pr = report.get("pronunciation", {})
         if isinstance(pr, dict):
-            for p in pr.get("issues", [])[:2]:
-                if isinstance(p, dict) and p.get("word"):
-                    issues.append(f"Pronunciation: '{p.get('word')}' ({p.get('practice', '')})")
-        if issues:
-            tips_text = " | ".join(issues)
-            self._transcript_view.append(f"<span style='color: #f59e0b;'>💡 {tips_text}</span>")
+            if not pr.get("available"):
+                parts.append("PRONUNCIATION: " + pr.get("message", "Unavailable for this response."))
+            else:
+                for i in pr.get("issues", [])[:2]:
+                    parts.append(
+                        f'PRONUNCIATION "{i.get("word","")}": {i.get("issue","")} -> {i.get("practice","")}'
+                    )
 
-        self._transcript_view.append("")  # blank separator line
-        sb = self._transcript_view.verticalScrollBar()
-        if sb:
-            sb.setValue(sb.maximum())
+        # WPM
+        pace = report.get("speaking_speed", {})
+        if isinstance(pace, dict) and pace.get("wpm"):
+            parts.append(f'SPEED: {pace.get("wpm")} WPM — {pace.get("assessment","")}')
+
+        self._feedback_view.setPlainText("\n".join(parts) if parts else "No feedback available.")
 
     def show_progress(self, progress: dict):
         """Thread-safe. Queue a progress report for the Qt main thread."""
@@ -3520,7 +3294,7 @@ class EnglishTutorOverlay(QDialog):
                 parts.append(f"  + {k.upper()}")
         else:
             parts.append("No significant changes from previous sessions yet.")
-        self._transcript_view.append("<span style='color: #34d399;'>" + "<br>".join(parts) + "</span>")
+        self._feedback_view.setPlainText("\n".join(parts))
 
     def set_hearing(self, word: str):
         """Thread-safe. Queue a practice word for the Qt main thread."""
@@ -3547,20 +3321,9 @@ class EnglishTutorOverlay(QDialog):
     def _on_hear(self):
         self.speak_requested.emit("HEAR_WORD")
 
-    def close_tutor(self):
-        """Clean close method invoked from backend or UI."""
-        self.hide()
-
-    def closeEvent(self, event):
-        """Handle standard OS window close ('X' button)."""
-        self.close_requested.emit()
-        event.accept()
-
     def show_overlay(self):
-        """Display the floating tutor window."""
         self.show()
         self.raise_()
-        self.activateWindow()
 
 
 class PluginSettingsOverlay(QWidget):
@@ -4076,9 +3839,6 @@ class MainWindow(QMainWindow):
             apply_ui_accent(_ui_color)
 
         self.setWindowTitle(f"{_display} — {APP_VERSION}")
-        _window_icon = CONFIG_DIR / "jarvis.ico"
-        if _window_icon.exists():
-            self.setWindowIcon(QIcon(str(_window_icon)))
         self.setMinimumSize(_MIN_W, _MIN_H)
         self.resize(_DEFAULT_W, _DEFAULT_H)
 
@@ -4232,12 +3992,8 @@ class MainWindow(QMainWindow):
         self._clipboard_panel.action_requested.connect(self._on_clipboard_action)
         QApplication.clipboard().dataChanged.connect(self._on_clipboard_changed)
 
-        # English Tutor floating dialog
-        self._tutor_overlay = EnglishTutorOverlay(self)
-        self._tutor_overlay.speak_requested.connect(self._send_command)
-        self._tutor_overlay.next_question_requested.connect(lambda: self._send_command("START ENGLISH TUTOR SESSION"))
-        self._tutor_overlay.score_query_requested.connect(lambda: self._send_command("what is my score"))
-        self._tutor_overlay.close_requested.connect(self._on_tutor_close_requested)
+        # English Tutor overlay (child of central widget, positioned below HUD)
+        self._tutor_overlay = EnglishTutorOverlay(self.centralWidget())
         self._tutor_active = False
 
         self._overlay: SetupOverlay | None = None
@@ -4993,12 +4749,12 @@ class MainWindow(QMainWindow):
         elif key == "system":
             self._send_command("System status report")
         elif key == "tutor":
-            # Toggle tutor dialog on/off
+            # Toggle tutor overlay on/off
             if self._tutor_overlay.isVisible():
-                self._tutor_overlay.close()
+                self._tutor_overlay.hide()
+                self._tutor_active = False
             else:
                 self._tutor_active = True
-                self._tutor_overlay.reset_scores()
                 self._position_tutor_overlay()
                 self._tutor_overlay.show_overlay()
                 # Request tutor start from the backend
@@ -5358,7 +5114,7 @@ class MainWindow(QMainWindow):
             l.setStyleSheet(f"color: {color}; background: transparent;")
             return l
 
-        # ── NEWS panel icon (from mj-1.png) ───────────────────────────────────
+        # ── NEWS panel icon (from mj.png) ─────────────────────────────────────
         _news_px = IconManager.get_pixmap("news", 16)
         news_icon = QLabel()
         if _news_px and not _news_px.isNull():
@@ -5864,17 +5620,22 @@ class MainWindow(QMainWindow):
         self._clipboard_panel.raise_()
 
     def _position_tutor_overlay(self):
-        """Center English Tutor dialog on screen or relative to main window."""
-        if not self._tutor_overlay.isVisible():
-            geo = self.geometry()
-            x = geo.x() + (geo.width() - self._tutor_overlay.width()) // 2
-            y = geo.y() + (geo.height() - self._tutor_overlay.height()) // 2
-            self._tutor_overlay.move(max(30, x), max(30, y))
-
-    def _on_tutor_close_requested(self):
-        """Handle tutor window close: clean backend exit."""
-        self._tutor_active = False
-        self._send_command("CLOSE_TUTOR")
+        """Position English Tutor overlay below HUD, centered."""
+        cw = self.centralWidget()
+        pw = EnglishTutorOverlay._W
+        ph = EnglishTutorOverlay._H
+        x = (cw.width() - pw) // 2
+        # Place below the HUD area (center panel top portion)
+        split = self._center_split
+        if split and split.isVisible():
+            y = split.y() + 12
+        else:
+            y = 60
+        # Clamp so it doesn't exceed the panel
+        max_y = cw.height() - ph - 4
+        y = min(y, max_y)
+        self._tutor_overlay.setGeometry(x, y, pw, ph)
+        self._tutor_overlay.raise_()
 
     @property
     def tutor_overlay(self) -> EnglishTutorOverlay:
