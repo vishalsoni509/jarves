@@ -3140,6 +3140,7 @@ class EnglishTutorOverlay(QDialog):
     next_question_requested = pyqtSignal()
     score_query_requested   = pyqtSignal()
     close_requested         = pyqtSignal()
+    interrupt_requested     = pyqtSignal()
 
     # Thread-safe update channels
     _state_sig    = pyqtSignal(str)
@@ -3148,12 +3149,16 @@ class EnglishTutorOverlay(QDialog):
     _progress_sig = pyqtSignal(dict)
     _hearing_sig  = pyqtSignal(str)
 
-    _W, _H = 820, 580
+    _W, _H = 900, 650
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(None)   # Top-level window for standard OS title bar & controls
+        self._main_win = parent
         self.setObjectName("EnglishTutorDialog")
         self.setWindowTitle("JARVIS — English Speaking Mentor")
+        _window_icon = CONFIG_DIR / "jarvis.ico"
+        if _window_icon.exists():
+            self.setWindowIcon(QIcon(str(_window_icon)))
         self.setWindowFlags(
             Qt.WindowType.Window |
             Qt.WindowType.WindowTitleHint |
@@ -3162,7 +3167,8 @@ class EnglishTutorOverlay(QDialog):
             Qt.WindowType.WindowCloseButtonHint
         )
         self.resize(self._W, self._H)
-        self.setMinimumSize(680, 460)
+        self.setMinimumSize(700, 520)
+        self.setSizeGripEnabled(True)
         self.setStyleSheet(f"""
             QDialog#EnglishTutorDialog {{
                 background: #010a12;
@@ -3312,6 +3318,18 @@ class EnglishTutorOverlay(QDialog):
 
         btn_row.addStretch()
 
+        self._interrupt_btn = self._make_btn("INTERRUPT [ESC]", "interrupt")
+        self._interrupt_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: #2a1f05; color: #ffcc00;
+                border: 1px solid #775500; border-radius: 3px;
+                padding: 4px 10px; font-weight: bold;
+            }}
+            QPushButton:hover {{ background: #3d2f07; color: #ffe066; border-color: #ffaa00; }}
+        """)
+        self._interrupt_btn.clicked.connect(self._on_interrupt_click)
+        btn_row.addWidget(self._interrupt_btn)
+
         self._close_btn = self._make_btn("CLOSE TUTOR", "stop")
         self._close_btn.setStyleSheet(f"""
             QPushButton {{
@@ -3326,6 +3344,9 @@ class EnglishTutorOverlay(QDialog):
 
         lay.addLayout(btn_row)
 
+        sc_esc = QShortcut(QKeySequence("Escape"), self)
+        sc_esc.activated.connect(self._on_interrupt_click)
+
         # Route setters through thread-safe Qt signals
         self._state_sig.connect(self._apply_state_ui)
         self._question_sig.connect(self._apply_question_ui)
@@ -3334,6 +3355,10 @@ class EnglishTutorOverlay(QDialog):
         self._hearing_sig.connect(self._apply_hearing_ui)
 
         self.hide()
+
+    def _on_interrupt_click(self):
+        self.set_state("LISTENING")
+        self.interrupt_requested.emit()
 
     # ── UI helpers ──────────────────────────────────────────────────────────
 
@@ -3557,7 +3582,14 @@ class EnglishTutorOverlay(QDialog):
         event.accept()
 
     def show_overlay(self):
-        """Display the floating tutor window."""
+        """Display the floating tutor window centered on screen."""
+        if not self.isVisible():
+            screen = QApplication.primaryScreen()
+            if screen:
+                screen_geo = screen.availableGeometry()
+                x = screen_geo.x() + (screen_geo.width() - self.width()) // 2
+                y = screen_geo.y() + (screen_geo.height() - self.height()) // 2
+                self.move(max(30, x), max(30, y))
         self.show()
         self.raise_()
         self.activateWindow()
@@ -4238,6 +4270,7 @@ class MainWindow(QMainWindow):
         self._tutor_overlay.next_question_requested.connect(lambda: self._send_command("START ENGLISH TUTOR SESSION"))
         self._tutor_overlay.score_query_requested.connect(lambda: self._send_command("what is my score"))
         self._tutor_overlay.close_requested.connect(self._on_tutor_close_requested)
+        self._tutor_overlay.interrupt_requested.connect(self._do_interrupt)
         self._tutor_active = False
 
         self._overlay: SetupOverlay | None = None
@@ -5864,11 +5897,12 @@ class MainWindow(QMainWindow):
         self._clipboard_panel.raise_()
 
     def _position_tutor_overlay(self):
-        """Center English Tutor dialog on screen or relative to main window."""
-        if not self._tutor_overlay.isVisible():
-            geo = self.geometry()
-            x = geo.x() + (geo.width() - self._tutor_overlay.width()) // 2
-            y = geo.y() + (geo.height() - self._tutor_overlay.height()) // 2
+        """Center English Tutor dialog on screen."""
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geo = screen.availableGeometry()
+            x = screen_geo.x() + (screen_geo.width() - self._tutor_overlay.width()) // 2
+            y = screen_geo.y() + (screen_geo.height() - self._tutor_overlay.height()) // 2
             self._tutor_overlay.move(max(30, x), max(30, y))
 
     def _on_tutor_close_requested(self):
@@ -5888,6 +5922,8 @@ class MainWindow(QMainWindow):
     # ────────────────────────────────────────────────────────────────────────────
 
     def _do_interrupt(self):
+        if hasattr(self, '_tutor_overlay') and self._tutor_overlay.isVisible():
+            self._tutor_overlay.set_state("LISTENING")
         if self.on_interrupt:
             self.on_interrupt()
 
